@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   LayoutDashboard, Package, Users, CalendarCheck, Wallet, Briefcase,
-  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, Lock, LogOut
+  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import { useAuth } from "./auth/AuthContext.jsx";
@@ -23,12 +23,13 @@ const KEYS = {
   partyRegistrations: "nova-party-registrations",
   productionWorkflow: "nova-production-workflow",
   legalDocCategories: "nova-legal-doc-categories",
+  materialRequests: "nova-material-requests",
 };
 
 // Persistence: Supabase Postgres (table `app_storage`, one row per key) — real
-// shared data across every device and every logged-in user, replacing the old
-// per-browser localStorage. Function signatures are unchanged on purpose so
-// every existing call site (loadList/saveList/loadObj/saveObj) needed zero edits.
+// shared data across every device and every logged-in user. Function
+// signatures are unchanged so every existing loadList/saveList/loadObj/saveObj
+// call site elsewhere in this file needs zero edits.
 async function loadObj(key, fallback) {
   try {
     const { data, error } = await supabase.from("app_storage").select("value").eq("key", key).maybeSingle();
@@ -149,6 +150,12 @@ function formatPanStrict(raw) {
 
 function formatPhone10(raw) {
   return raw.replace(/\D/g, "").slice(0, 10);
+}
+// Bank account numbers are always numeric — real ones run roughly 9–18 digits
+// depending on the bank, so this strips anything non-numeric and caps length
+// generously rather than enforcing one exact length like PAN/GSTIN do.
+function formatAccountNumber(raw) {
+  return raw.replace(/\D/g, "").slice(0, 18);
 }
 
 const fmt = (n) =>
@@ -430,27 +437,6 @@ function AttachmentsField({ recordId, label = "Attachments" }) {
   );
 }
 
-// Every real dashboard tab (excludes "access", which is admin-only and injected
-// separately) — shared between the sidebar nav and the Access Control panel so
-// the two never drift out of sync.
-const ALL_TABS = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "inventory", label: "Inventory", icon: Package },
-  { id: "assets", label: "Asset Management", icon: Boxes },
-  { id: "attendance", label: "Attendance", icon: CalendarCheck },
-  { id: "employees", label: "Employees & Salary", icon: Users },
-  { id: "capex", label: "CapEx", icon: Wallet },
-  { id: "opex", label: "OpEx", icon: Wallet },
-  { id: "orders", label: "Orders / Projects", icon: Briefcase },
-  { id: "workflow", label: "Production Workflow", icon: Workflow },
-  { id: "clientPayments", label: "Client Payments", icon: CreditCard },
-  { id: "vendorPayments", label: "Vendor Payments", icon: CreditCard },
-  { id: "payroll", label: "Payroll", icon: Receipt },
-  { id: "delivery", label: "Delivery Documents", icon: Truck },
-  { id: "partyReg", label: "Client / Vendor Registration", icon: Building2 },
-  { id: "legal", label: "Legal Documents", icon: ShieldCheck },
-];
-
 // Admin-only panel: manage who can log in to what. Only creates/edits rows in
 // user_permissions — it can't create the underlying Supabase Auth user itself
 // (that needs the Supabase dashboard, since the anon key has no admin rights).
@@ -659,6 +645,28 @@ function AccessControlTab({ currentEmail }) {
   );
 }
 
+// Every real dashboard tab (excludes "access", which is admin-only and injected
+// separately) — shared between the sidebar nav and the Access Control panel so
+// the two never drift out of sync.
+const ALL_TABS = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "inventory", label: "Inventory", icon: Package },
+  { id: "assets", label: "Asset Management", icon: Boxes },
+  { id: "attendance", label: "Attendance", icon: CalendarCheck },
+  { id: "employees", label: "Employees & Salary", icon: Users },
+  { id: "capex", label: "CapEx", icon: Wallet },
+  { id: "opex", label: "OpEx", icon: Wallet },
+  { id: "orders", label: "Orders / Projects", icon: Briefcase },
+  { id: "trackSheet", label: "Project Track Sheet", icon: FileSpreadsheet },
+  { id: "workflow", label: "Production Workflow", icon: Workflow },
+  { id: "clientPayments", label: "Client Payments", icon: CreditCard },
+  { id: "vendorPayments", label: "Vendor Payments", icon: CreditCard },
+  { id: "payroll", label: "Payroll", icon: Receipt },
+  { id: "delivery", label: "Delivery Documents", icon: Truck },
+  { id: "partyReg", label: "Client / Vendor Registration", icon: Building2 },
+  { id: "legal", label: "Legal Documents", icon: ShieldCheck },
+];
+
 // ---------- main app ----------
 export default function NovaOps() {
   const { session, permissions, signOut } = useAuth();
@@ -681,20 +689,17 @@ export default function NovaOps() {
   const [partyRegistrations, setPartyRegistrations] = useState([]);
   const [productionWorkflow, setProductionWorkflow] = useState([]);
   const [legalDocCategories, setLegalDocCategories] = useState([]);
+  const [materialRequests, setMaterialRequests] = useState([]);
   const [company, setCompany] = useState({ name: "NOVA", address: "", gstin: "" });
   const [printContent, setPrintContent] = useState(null);
   const [printTitle, setPrintTitle] = useState("nova-document");
 
-  // useLayoutEffect (not useEffect + setTimeout) so this fires synchronously right
-  // after React commits the hidden print node to the DOM — staying inside the same
-  // user-gesture window as the button click. A setTimeout here, even a short one,
-  // detaches the download from that gesture and gets it silently blocked, especially
-  // inside a sandboxed preview iframe.
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (printContent) {
-      const node = document.getElementById("global-print-area");
-      const html = node ? node.innerHTML : "";
-      const fullHtml = `<!DOCTYPE html>
+      const t = setTimeout(() => {
+        const node = document.getElementById("global-print-area");
+        const html = node ? node.innerHTML : "";
+        const fullHtml = `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -711,24 +716,26 @@ export default function NovaOps() {
     </script>
   </body>
 </html>`;
-      const blob = new Blob([fullHtml], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${printTitle}.html`;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-      setPrintContent(null);
+        const blob = new Blob([fullHtml], { type: "text/html" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${printTitle}.html`;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        setPrintContent(null);
+      }, 80);
+      return () => clearTimeout(t);
     }
   }, [printContent]);
 
   useEffect(() => {
     (async () => {
-      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc] = await Promise.all([
+      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc, mr] = await Promise.all([
         loadList(KEYS.inventory),
         loadList(KEYS.attendance),
         loadList(KEYS.employees),
@@ -743,6 +750,7 @@ export default function NovaOps() {
         loadList(KEYS.partyRegistrations),
         loadList(KEYS.productionWorkflow),
         loadList(KEYS.legalDocCategories),
+        loadList(KEYS.materialRequests),
       ]);
       setInventory(inv);
       setAttendance(att);
@@ -758,6 +766,7 @@ export default function NovaOps() {
       setPartyRegistrations(pReg);
       setProductionWorkflow(pw);
       setLegalDocCategories(ldc);
+      setMaterialRequests(mr);
       setLoading(false);
     })();
   }, []);
@@ -803,6 +812,9 @@ export default function NovaOps() {
     if (!loading) saveList(KEYS.legalDocCategories, legalDocCategories);
   }, [legalDocCategories, loading]);
   useEffect(() => {
+    if (!loading) saveList(KEYS.materialRequests, materialRequests);
+  }, [materialRequests, loading]);
+  useEffect(() => {
     if (!loading) saveObj(KEYS.company, company);
   }, [company, loading]);
 
@@ -832,8 +844,36 @@ export default function NovaOps() {
   }
 
   return (
-    <div className="bg-neutral-50 min-h-screen font-sans">
-      <div className="max-w-7xl mx-auto px-4 py-6 flex gap-6 items-start">
+    <div className="min-h-screen font-sans bg-neutral-50 relative">
+      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+        <div
+          style={{
+            position: "absolute",
+            width: 460,
+            height: 460,
+            borderRadius: "9999px",
+            background: "#fbdede",
+            filter: "blur(85px)",
+            top: -140,
+            left: -120,
+            opacity: 0.75,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 420,
+            height: 420,
+            borderRadius: "9999px",
+            background: "#dbe8fb",
+            filter: "blur(85px)",
+            bottom: -120,
+            right: -100,
+            opacity: 0.75,
+          }}
+        />
+      </div>
+      <div className="relative z-10 max-w-7xl mx-auto px-4 py-6 flex gap-6 items-start">
         <aside className="w-64 shrink-0 sticky top-6">
           <div className="mb-5 px-1">
             <div className="text-xs font-bold tracking-widest text-red-600 uppercase">
@@ -902,6 +942,8 @@ export default function NovaOps() {
             setItems={setInventory}
             entries={finance}
             setEntries={setFinance}
+            materialRequests={materialRequests}
+            setMaterialRequests={setMaterialRequests}
             company={company}
             setPrintContent={setPrintContent}
             setPrintTitle={setPrintTitle}
@@ -969,6 +1011,18 @@ export default function NovaOps() {
             setPrintTitle={setPrintTitle}
           />
         )}
+        {tab === "trackSheet" && (
+          <ProjectTrackSheetTab
+            orders={orders}
+            setOrders={setOrders}
+            inventory={inventory}
+            setInventory={setInventory}
+            employees={employees}
+            setPrintContent={setPrintContent}
+            setPrintTitle={setPrintTitle}
+            company={company}
+          />
+        )}
         {tab === "workflow" && (
           <ProductionWorkflowTab
             orders={orders}
@@ -976,16 +1030,36 @@ export default function NovaOps() {
             employees={employees}
             workflow={productionWorkflow}
             setWorkflow={setProductionWorkflow}
+            materialRequests={materialRequests}
+            setMaterialRequests={setMaterialRequests}
             company={company}
             setPrintContent={setPrintContent}
             setPrintTitle={setPrintTitle}
           />
         )}
         {tab === "clientPayments" && (
-          <PaymentsTab payments={payments} setPayments={setPayments} partyType="Client" partyRegistrations={partyRegistrations} orders={orders} />
+          <PaymentsTab
+            payments={payments}
+            setPayments={setPayments}
+            partyType="Client"
+            partyRegistrations={partyRegistrations}
+            orders={orders}
+            company={company}
+            setPrintContent={setPrintContent}
+            setPrintTitle={setPrintTitle}
+          />
         )}
         {tab === "vendorPayments" && (
-          <PaymentsTab payments={payments} setPayments={setPayments} partyType="Vendor" partyRegistrations={partyRegistrations} orders={orders} />
+          <PaymentsTab
+            payments={payments}
+            setPayments={setPayments}
+            partyType="Vendor"
+            partyRegistrations={partyRegistrations}
+            orders={orders}
+            company={company}
+            setPrintContent={setPrintContent}
+            setPrintTitle={setPrintTitle}
+          />
         )}
         {tab === "payroll" && (
           <PayrollTab
@@ -1141,17 +1215,71 @@ function Overview({ inventory, attendance, employees, finance, orders, payments 
 }
 
 // ---------- INVENTORY ----------
-const BLANK_ITEM = { name: "", category: "", quantity: "", unit: "pcs", reorderLevel: "", unitCost: "" };
+const BLANK_ITEM = { name: "", sku: "", category: "", quantity: "", unit: "pcs", reorderLevel: "", unitCost: "" };
 
-function InventoryTab({ items, setItems, entries, setEntries, company, setPrintContent, setPrintTitle }) {
+// Assigns each category a consistent color (same category always gets the
+// same one), purely so the product catalogue table has some visual variety
+// per row — mirrors the colored icon tiles in the reference design.
+// Units offered in the Material Request "Unit" dropdown — add more here
+// any time (e.g. "Sheets", "Rolls") as new material types come up.
+const UNIT_OPTIONS = ["Pcs", "Kg", "Litres", "Grams", "ML", "Meters", "Box", "Set"];
+
+const CATEGORY_COLOR_CLASSES = [
+  { bg: "bg-blue-50", text: "text-blue-600" },
+  { bg: "bg-amber-50", text: "text-amber-600" },
+  { bg: "bg-emerald-50", text: "text-emerald-600" },
+  { bg: "bg-violet-50", text: "text-violet-600" },
+  { bg: "bg-rose-50", text: "text-rose-600" },
+  { bg: "bg-cyan-50", text: "text-cyan-600" },
+];
+function categoryColor(category) {
+  if (!category) return CATEGORY_COLOR_CLASSES[0];
+  let hash = 0;
+  for (let i = 0; i < category.length; i++) hash = (hash * 31 + category.charCodeAt(i)) % CATEGORY_COLOR_CLASSES.length;
+  return CATEGORY_COLOR_CLASSES[Math.abs(hash) % CATEGORY_COLOR_CLASSES.length];
+}
+function stockStatus(item) {
+  const qty = Number(item.quantity || 0);
+  const reorder = Number(item.reorderLevel || 0);
+  if (qty <= 0) return { label: "Out of stock", tone: "red", filterValue: "out" };
+  if (qty <= reorder) return { label: "Low stock", tone: "amber", filterValue: "low" };
+  return { label: "In stock", tone: "green", filterValue: "in" };
+}
+
+function InventoryTab({ items, setItems, entries, setEntries, materialRequests, setMaterialRequests, company, setPrintContent, setPrintTitle }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [form, setForm] = useState(BLANK_ITEM);
   const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [stockFilter, setStockFilter] = useState("all");
+  const [sortKey, setSortKey] = useState("name");
+  const [sortDir, setSortDir] = useState("asc");
+  const [fulfillingRequestId, setFulfillingRequestId] = useState(null);
 
-  const openAdd = () => { setForm(BLANK_ITEM); setEditingId(null); setActiveId(uid()); setOpen(true); };
-  const openEdit = (row) => { setForm({ ...BLANK_ITEM, ...row }); setEditingId(row.id); setActiveId(row.id); setOpen(true); };
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
+  };
+
+  const openAdd = () => { setForm(BLANK_ITEM); setEditingId(null); setActiveId(uid()); setFulfillingRequestId(null); setOpen(true); };
+  const openEdit = (row) => { setForm({ ...BLANK_ITEM, ...row }); setEditingId(row.id); setActiveId(row.id); setFulfillingRequestId(null); setOpen(true); };
+
+  // Pending Material Requests from Project Track Sheet: pre-fill the Add Item
+  // form with what's being requested, so the Purchase Manager just fills in
+  // cost/category rather than retyping the material name from scratch.
+  const pendingRequests = materialRequests.filter((r) => r.status === "Pending");
+  const fulfillRequest = (request) => {
+    setForm({ ...BLANK_ITEM, name: request.itemName, unit: request.unit || "pcs", quantity: request.qty });
+    setEditingId(null);
+    setActiveId(uid());
+    setFulfillingRequestId(request.id);
+    setOpen(true);
+  };
+  const dismissRequest = (id) => {
+    setMaterialRequests((prev) => prev.filter((r) => r.id !== id));
+  };
 
   const save = () => {
     if (!form.name) return;
@@ -1177,9 +1305,19 @@ function InventoryTab({ items, setItems, entries, setEntries, company, setPrintC
       );
     } else {
       setItems([...items, { id: activeId, ...form }]);
+      // If this Add was triggered from a pending Material Request, mark that
+      // request fulfilled and link it to the item that was just created.
+      if (fulfillingRequestId) {
+        setMaterialRequests((prev) =>
+          prev.map((r) =>
+            r.id === fulfillingRequestId ? { ...r, status: "Purchased", linkedInventoryItemId: activeId } : r
+          )
+        );
+      }
     }
     setForm(BLANK_ITEM);
     setEditingId(null);
+    setFulfillingRequestId(null);
     setOpen(false);
   };
 
@@ -1206,43 +1344,80 @@ function InventoryTab({ items, setItems, entries, setEntries, company, setPrintC
   };
 
   const q = query.trim().toLowerCase();
-  const filteredItems = q
+  const searchedItems = q
     ? items.filter(
         (i) =>
           (i.name || "").toLowerCase().includes(q) ||
-          (i.category || "").toLowerCase().includes(q)
+          (i.category || "").toLowerCase().includes(q) ||
+          (i.sku || "").toLowerCase().includes(q)
       )
     : items;
+
+  const categories = Array.from(new Set(items.map((i) => i.category).filter(Boolean))).sort();
+  const categoryFiltered = categoryFilter === "all" ? searchedItems : searchedItems.filter((i) => i.category === categoryFilter);
+  const filteredItems = stockFilter === "all" ? categoryFiltered : categoryFiltered.filter((i) => stockStatus(i).filterValue === stockFilter);
+
+  const sortedItems = [...filteredItems].sort((a, b) => {
+    let av, bv;
+    if (sortKey === "quantity" || sortKey === "unitCost") {
+      av = Number(a[sortKey] || 0);
+      bv = Number(b[sortKey] || 0);
+    } else if (sortKey === "totalValue") {
+      av = Number(a.quantity || 0) * Number(a.unitCost || 0);
+      bv = Number(b.quantity || 0) * Number(b.unitCost || 0);
+    } else if (sortKey === "status") {
+      av = stockStatus(a).label;
+      bv = stockStatus(b).label;
+    } else {
+      av = (a[sortKey] || "").toString().toLowerCase();
+      bv = (b[sortKey] || "").toString().toLowerCase();
+    }
+    if (av < bv) return sortDir === "asc" ? -1 : 1;
+    if (av > bv) return sortDir === "asc" ? 1 : -1;
+    return 0;
+  });
 
   const totalInventoryValue = items.reduce((s, i) => s + Number(i.quantity || 0) * Number(i.unitCost || 0), 0);
   const lowStockCount = items.filter((i) => Number(i.quantity) <= Number(i.reorderLevel || 0)).length;
 
+  const SortHeader = ({ label, sortField, align = "left" }) => (
+    <th
+      onClick={() => toggleSort(sortField)}
+      className={`px-4 py-2.5 cursor-pointer select-none whitespace-nowrap text-${align}`}
+    >
+      <span className={`inline-flex items-center gap-1 ${align === "right" ? "flex-row-reverse" : ""}`}>
+        {label}
+        <ArrowUpDown size={11} className={sortKey === sortField ? "text-red-600" : "text-red-200"} />
+      </span>
+    </th>
+  );
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center flex-wrap gap-3">
-        <h2 className="font-bold text-lg text-neutral-900">Inventory / Stock</h2>
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div>
+          <div className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-0.5">Catalogue</div>
+          <h2 className="font-serif font-bold text-2xl text-neutral-900">Inventory / Stock</h2>
+        </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-            <input
-              className={`${inputCls} pl-8 w-56`}
-              placeholder="Search items or category…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
           <button
             onClick={() => {
               setPrintTitle("Inventory-Register");
               setPrintContent(<InventoryPrintLayout items={filteredItems} company={company} />);
             }}
-            className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-lg transition"
+            className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-full transition"
           >
             <Printer size={16} /> Download PDF
           </button>
-          <AddButton onClick={openAdd} text="Add item" />
+          <button
+            onClick={openAdd}
+            className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold pl-3 pr-4 py-2 rounded-full transition"
+          >
+            <Plus size={16} /> Add item
+          </button>
         </div>
       </div>
+
       <div className="grid grid-cols-2 gap-4">
         <Card label="Inventory Value" value={fmt(totalInventoryValue)} sub={`${items.length} SKUs tracked`} />
         <Card
@@ -1252,70 +1427,164 @@ function InventoryTab({ items, setItems, entries, setEntries, company, setPrintC
           sub={lowStockCount ? "Items at or below reorder level" : "All items healthy"}
         />
       </div>
-      <p className="text-xs text-neutral-400 -mt-2">
+
+      {pendingRequests.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 text-amber-700 font-semibold text-sm mb-2">
+            <AlertTriangle size={16} /> Material requests from projects ({pendingRequests.length})
+          </div>
+          <div className="space-y-1.5">
+            {pendingRequests.map((r) => (
+              <div key={r.id} className="flex items-center justify-between bg-white border border-amber-100 rounded-lg px-3 py-2 text-sm">
+                <div>
+                  <span className="font-semibold text-neutral-800">{r.itemName}</span>
+                  <span className="text-neutral-400"> · {r.qty}{r.unit ? ` ${r.unit}` : ""} needed</span>
+                  <span className="text-neutral-400"> · for {r.orderName}</span>
+                  {r.note && <span className="text-neutral-400"> · "{r.note}"</span>}
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button onClick={() => fulfillRequest(r)} className="text-xs font-semibold text-red-600 hover:text-red-700">
+                    Add to Inventory
+                  </button>
+                  <button onClick={() => dismissRequest(r.id)} className="text-neutral-300 hover:text-red-600">
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-neutral-400">
         Tick "Send to OpEx" on any item to log it as an operating expense — its cost stays linked, so quantity or unit-cost corrections here update the OpEx entry too.
       </p>
-      <Table
-        emptyMsg={q ? `No items match "${query}".` : "No inventory items yet. Add your first SKU to start tracking stock."}
-        columns={[
-          { key: "name", label: "Item" },
-          { key: "category", label: "Category" },
-          {
-            key: "quantity",
-            label: "Qty",
-            render: (r) => (
-              <span
-                className={
-                  Number(r.quantity) <= Number(r.reorderLevel || 0)
-                    ? "text-red-600 font-semibold"
-                    : ""
-                }
-              >
-                {r.quantity} {r.unit}
-              </span>
-            ),
-          },
-          { key: "reorderLevel", label: "Reorder at" },
-          { key: "unitCost", label: "Unit cost", render: (r) => fmt(r.unitCost) },
-          {
-            key: "value",
-            label: "Value",
-            render: (r) => fmt(Number(r.quantity) * Number(r.unitCost || 0)),
-          },
-          {
-            key: "sendToOpex",
-            label: "Send to OpEx",
-            render: (r) =>
-              r.sentToOpex ? (
-                <span className="text-xs text-emerald-600 font-semibold whitespace-nowrap">✓ In OpEx</span>
-              ) : (
-                <input
-                  type="checkbox"
-                  checked={false}
-                  onChange={(e) => { e.target.disabled = true; sendToOpex(r); }}
-                  className="w-4 h-4 accent-red-600 cursor-pointer"
-                  title="Log this item's cost as an OpEx entry"
-                />
-              ),
-          },
-        ]}
-        rows={filteredItems}
-        onDelete={(id) => {
-          setItems(items.filter((i) => i.id !== id));
-          // Don't leave a linked OpEx entry pointing at a deleted inventory item —
-          // unlink it (keep the OpEx entry itself, just mark it Manual) instead of
-          // a dangling reference.
-          setEntries((prev) =>
-            prev.map((e) => (e.inventoryItemId === id ? { ...e, fromInventory: false, inventoryItemId: null } : e))
-          );
-        }}
-        onEdit={openEdit}
-      />
+
+      <div className="flex flex-wrap gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+          <input
+            className={`${inputCls} rounded-full pl-9 w-full`}
+            placeholder="Search product name or SKU…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        <select className={`${inputCls} rounded-full`} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+          <option value="all">All categories</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <select className={`${inputCls} rounded-full`} value={stockFilter} onChange={(e) => setStockFilter(e.target.value)}>
+          <option value="all">All stock levels</option>
+          <option value="in">In stock</option>
+          <option value="low">Low stock</option>
+          <option value="out">Out of stock</option>
+        </select>
+      </div>
+
+      <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-red-50 text-red-700 text-xs font-semibold uppercase tracking-wide">
+            <tr>
+              <SortHeader label="Product" sortField="name" />
+              <SortHeader label="SKU" sortField="sku" />
+              <SortHeader label="Price" sortField="unitCost" align="right" />
+              <SortHeader label="Stock" sortField="quantity" align="right" />
+              <SortHeader label="Status" sortField="status" />
+              <SortHeader label="Total" sortField="totalValue" align="right" />
+              <th className="px-4 py-2.5 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedItems.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-10 text-center text-sm text-neutral-400">
+                  {q || categoryFilter !== "all" || stockFilter !== "all"
+                    ? "No items match your filters."
+                    : "No inventory items yet. Add your first SKU to start tracking stock."}
+                </td>
+              </tr>
+            )}
+            {sortedItems.map((item) => {
+              const cc = categoryColor(item.category);
+              const status = stockStatus(item);
+              const alreadySentToOpex = item.sentToOpex || entries.some((e) => e.inventoryItemId === item.id);
+              return (
+                <tr key={item.id} className="border-t border-neutral-100 hover:bg-neutral-50/60 transition">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${cc.bg}`}>
+                        <Package size={16} className={cc.text} />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-neutral-800">{item.name}</div>
+                        <div className="text-xs text-neutral-400">{item.category || "—"}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-neutral-500 font-mono whitespace-nowrap">{item.sku || "—"}</td>
+                  <td className="px-4 py-3 text-right text-neutral-700 whitespace-nowrap">{fmt(item.unitCost)}</td>
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <span className={status.filterValue !== "in" ? "text-red-600 font-semibold" : "text-neutral-800 font-semibold"}>
+                      {item.quantity} {item.unit}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Pill tone={status.tone}>{status.label}</Pill>
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-neutral-800 whitespace-nowrap">
+                    {fmt(Number(item.quantity || 0) * Number(item.unitCost || 0))}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+                      {status.filterValue !== "in" && (
+                        <button onClick={() => openEdit(item)} className="text-xs font-semibold text-blue-600 hover:text-blue-700">
+                          Restock
+                        </button>
+                      )}
+                      <button onClick={() => openEdit(item)} className="text-xs font-semibold text-neutral-500 hover:text-neutral-800">
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          setItems(items.filter((i) => i.id !== item.id));
+                          setEntries((prev) =>
+                            prev.map((e) => (e.inventoryItemId === item.id ? { ...e, fromInventory: false, inventoryItemId: null } : e))
+                          );
+                        }}
+                        className="text-xs font-semibold text-red-600 hover:text-red-700"
+                      >
+                        Delete
+                      </button>
+                      {alreadySentToOpex ? (
+                        <span className="text-[11px] text-emerald-600 font-semibold">✓ OpEx</span>
+                      ) : (
+                        <button onClick={() => sendToOpex(item)} className="text-[11px] font-semibold text-neutral-400 hover:text-red-600">
+                          + OpEx
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
       {open && (
-        <Modal title={editingId ? "Edit inventory item" : "Add inventory item"} onClose={() => setOpen(false)}>
+        <Modal
+          title={editingId ? "Edit inventory item" : fulfillingRequestId ? "Add inventory item — fulfilling material request" : "Add inventory item"}
+          onClose={() => setOpen(false)}
+        >
           <div className="grid grid-cols-2 gap-3">
             <Field label="Item name">
               <input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </Field>
+            <Field label="SKU">
+              <input className={inputCls} value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="e.g. BEV-001" />
             </Field>
             <Field label="Category">
               <input className={inputCls} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
@@ -2012,7 +2281,13 @@ function EmployeesTab({ employees, setEmployees, company, setPrintContent, setPr
               <input className={inputCls} value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} />
             </Field>
             <Field label="Account number">
-              <input className={inputCls} value={form.accountNumber} onChange={(e) => setForm({ ...form, accountNumber: e.target.value })} />
+              <input
+                className={inputCls}
+                inputMode="numeric"
+                value={form.accountNumber}
+                onChange={(e) => setForm({ ...form, accountNumber: formatAccountNumber(e.target.value) })}
+              />
+              <span className="text-[11px] text-neutral-400">Numbers only.</span>
             </Field>
             <Field label="IFSC code">
               <input className={inputCls} value={form.ifsc} onChange={(e) => setForm({ ...form, ifsc: e.target.value })} />
@@ -2534,6 +2809,107 @@ function AttendancePrintLayout({ records, employees, company, periodLabel }) {
 }
 
 // ---------- FINANCE (CapEx / OpEx) ----------
+// Indian Financial Year (Apr–Mar) options for the CapEx year filter — fixed to
+// always start at FY2025-26 and run 25 years forward, regardless of what
+// today's date happens to be (so the range stays predictable over time).
+function generateFYOptions() {
+  const baseStartYear = 2025;
+  const options = [];
+  for (let i = 24; i >= 0; i--) {
+    const startYear = baseStartYear + i;
+    options.push({
+      value: String(startYear),
+      label: `FY ${startYear}-${String(startYear + 1).slice(-2)}`,
+      start: `${startYear}-04-01`,
+      end: `${startYear + 1}-03-31`,
+    });
+  }
+  return options;
+}
+
+// "2026-08-14" -> "2026-08" — used to group OpEx entries by calendar month
+// regardless of which exact day they fall on.
+function monthKeyFromDate(dateStr) {
+  return dateStr ? dateStr.slice(0, 7) : "";
+}
+// "2026-08" -> "Aug 2026"
+function formatMonthLabel(key) {
+  const [y, m] = key.split("-");
+  if (!y || !m) return key;
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleString("en-US", { month: "short", year: "numeric" });
+}
+const MONTH_PICKER_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_PICKER_START_YEAR = 2026;
+const MONTH_PICKER_END_YEAR = 2050;
+
+// Calendar-style month picker: pick a year, then click a month — instead of a
+// single flat dropdown listing all 300 months (25 years × 12) at once.
+function MonthRangePicker({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(
+    value !== "all" ? Number(value.split("-")[0]) : new Date().getFullYear()
+  );
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`${inputCls} flex items-center gap-1.5`}
+      >
+        <CalendarCheck size={14} className="text-neutral-400" />
+        {value === "all" ? "All months" : formatMonthLabel(value)}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute z-20 mt-1.5 bg-white border border-neutral-200 rounded-xl shadow-lg p-3 w-64">
+            <div className="flex items-center justify-between mb-2">
+              <button
+                onClick={() => setPickerYear((y) => Math.max(MONTH_PICKER_START_YEAR, y - 1))}
+                disabled={pickerYear <= MONTH_PICKER_START_YEAR}
+                className="text-neutral-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+              >
+                <ArrowLeft size={15} />
+              </button>
+              <span className="text-sm font-semibold text-neutral-800">{pickerYear}</span>
+              <button
+                onClick={() => setPickerYear((y) => Math.min(MONTH_PICKER_END_YEAR, y + 1))}
+                disabled={pickerYear >= MONTH_PICKER_END_YEAR}
+                className="text-neutral-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+              >
+                <ArrowRight size={15} />
+              </button>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {MONTH_PICKER_NAMES.map((name, idx) => {
+                const key = `${pickerYear}-${String(idx + 1).padStart(2, "0")}`;
+                const active = value === key;
+                return (
+                  <button
+                    key={name}
+                    onClick={() => { onChange(key); setOpen(false); }}
+                    className={`text-xs font-semibold py-1.5 rounded-lg transition ${
+                      active ? "bg-red-600 text-white" : "text-neutral-600 hover:bg-neutral-100"
+                    }`}
+                  >
+                    {name}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => { onChange("all"); setOpen(false); }}
+              className="mt-2 w-full text-xs font-semibold text-neutral-400 hover:text-red-600 py-1"
+            >
+              Clear — show all months
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function FinanceTab({ entries, setEntries, type, assets, setAssets, company, setPrintContent, setPrintTitle }) {
   const isCapex = type === "CapEx";
   const blank = { type, category: "", description: "", unitPrice: "", units: "1", amount: "", date: todayISO() };
@@ -2542,10 +2918,25 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
   const [activeId, setActiveId] = useState(null);
   const [form, setForm] = useState(blank);
   const [query, setQuery] = useState("");
+  const [fyFilter, setFyFilter] = useState("all");
+  const [monthFilter, setMonthFilter] = useState("all");
 
   const filtered = entries.filter((e) => e.type === type);
   const q = query.trim().toLowerCase();
   const searchedEntries = q ? filtered.filter((e) => (e.category || "").toLowerCase().includes(q)) : filtered;
+
+  // CapEx: sort/filter by Financial Year (Apr–Mar). OpEx: sort/filter by
+  // calendar month — via the MonthRangePicker below (2026–2050), not a flat list.
+  const fyOptions = generateFYOptions();
+  const fyRange = fyOptions.find((f) => f.value === fyFilter);
+
+  const viewEntries = isCapex
+    ? fyFilter === "all"
+      ? searchedEntries
+      : searchedEntries.filter((e) => e.date >= fyRange.start && e.date <= fyRange.end)
+    : monthFilter === "all"
+      ? searchedEntries
+      : searchedEntries.filter((e) => monthKeyFromDate(e.date) === monthFilter);
 
   const openAdd = () => { setForm(blank); setEditingId(null); setActiveId(uid()); setOpen(true); };
   const openEdit = (row) => { setForm({ ...blank, ...row }); setEditingId(row.id); setActiveId(row.id); setOpen(true); };
@@ -2601,14 +2992,26 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
     setEntries(entries.map((e) => (e.id === entry.id ? { ...e, sentToAssets: true } : e)));
   };
 
-  const total = filtered.reduce((s, e) => s + Number(e.amount), 0);
-  const sub = type === "CapEx" ? "Machinery, equipment, land etc." : "Rent, utilities, materials etc.";
+  const total = viewEntries.reduce((s, e) => s + Number(e.amount), 0);
+  const sub = isCapex
+    ? fyFilter === "all" ? "Machinery, equipment, land etc. · all years" : `Machinery, equipment, land etc. · ${fyRange?.label}`
+    : monthFilter === "all" ? "Rent, utilities, materials etc. · all months" : `Rent, utilities, materials etc. · ${formatMonthLabel(monthFilter)}`;
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="font-bold text-lg text-neutral-900">{type}</h2>
         <div className="flex gap-2 items-center flex-wrap">
+          {isCapex ? (
+            <select className={inputCls} value={fyFilter} onChange={(e) => setFyFilter(e.target.value)}>
+              <option value="all">All years</option>
+              {fyOptions.map((f) => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </select>
+          ) : (
+            <MonthRangePicker value={monthFilter} onChange={setMonthFilter} />
+          )}
           <div className="relative">
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
@@ -2622,7 +3025,7 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
             onClick={() => {
               setPrintTitle(`${type}-Register`);
               setPrintContent(
-                <FinanceListPrintLayout entries={[...searchedEntries].sort((a, b) => (a.date < b.date ? 1 : -1))} type={type} total={total} company={company} isCapex={isCapex} />
+                <FinanceListPrintLayout entries={[...viewEntries].sort((a, b) => (a.date < b.date ? 1 : -1))} type={type} total={total} company={company} isCapex={isCapex} />
               );
             }}
             className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-lg transition"
@@ -2639,7 +3042,15 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
         </p>
       )}
       <Table
-        emptyMsg={q ? `No ${type} entries match "${query}".` : `No ${type} entries yet.`}
+        emptyMsg={
+          q
+            ? `No ${type} entries match "${query}".`
+            : isCapex && fyFilter !== "all"
+              ? `No ${type} entries in ${fyRange?.label}.`
+              : !isCapex && monthFilter !== "all"
+                ? `No ${type} entries in ${formatMonthLabel(monthFilter)}.`
+                : `No ${type} entries yet.`
+        }
         columns={
           isCapex
             ? [
@@ -2673,7 +3084,7 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
                 { key: "amount", label: "Amount", render: (r) => fmt(r.amount) },
               ]
         }
-        rows={[...searchedEntries].sort((a, b) => (a.date < b.date ? 1 : -1))}
+        rows={[...viewEntries].sort((a, b) => (a.date < b.date ? 1 : -1))}
         onDelete={(id) => {
           setEntries(entries.filter((e) => e.id !== id));
           // Don't leave a linked Asset pointing at a deleted CapEx row — unlink it
@@ -2867,6 +3278,431 @@ function OrdersTab({ orders, setOrders, company, partyRegistrations, setPrintCon
   );
 }
 
+// ---------- PROJECT TRACK SHEET ----------
+// Per-project cost sheet as its own tab: pulls the project itself from
+// Orders/Projects, lets you log product consumption straight from Inventory,
+// and worker hours straight from Employees & Salary — then computes Total
+// Project Cost, GST, and Net Profit live. GST is calculated on the project's
+// Gross Worth (its order value) at 18% total — split as 9% CGST + 9% SGST for
+// an intra-state client, or shown as a single 18% IGST line for inter-state.
+// Both modes total the same 18%; only the split shown differs.
+function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, employees, setPrintContent, setPrintTitle, company }) {
+  const [selectedId, setSelectedId] = useState(orders[0]?.id || null);
+  const selected = orders.find((o) => o.id === selectedId) || null;
+
+  const updateOrder = (patch) => {
+    setOrders((prev) => prev.map((o) => (o.id === selectedId ? { ...o, ...patch } : o)));
+  };
+
+  const [prodForm, setProdForm] = useState({ itemId: "", qty: "" });
+  const [empForm, setEmpForm] = useState({ employeeId: "", hours: "", shiftType: "GS", cost: "", date: todayISO() });
+
+  const addProduct = () => {
+    const item = inventory.find((i) => i.id === prodForm.itemId);
+    if (!item || !prodForm.qty) return;
+    const qtyUsed = Number(prodForm.qty);
+    const cost = qtyUsed * Number(item.unitCost || 0);
+    const entry = {
+      id: uid(),
+      itemId: item.id,
+      itemName: item.name,
+      qty: prodForm.qty,
+      unit: item.unit,
+      unitCost: item.unitCost,
+      cost,
+      date: todayISO(),
+    };
+    updateOrder({ productAllocations: [...(selected.productAllocations || []), entry] });
+    // Deduct from Inventory stock so quantity on hand stays accurate — this is
+    // the whole point of linking the two tabs together.
+    setInventory((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, quantity: Number(i.quantity || 0) - qtyUsed } : i))
+    );
+    setProdForm({ itemId: "", qty: "" });
+  };
+  const removeProduct = (id) => {
+    const entry = productAllocations.find((e) => e.id === id);
+    updateOrder({ productAllocations: productAllocations.filter((e) => e.id !== id) });
+    // Undoing a consumption should give the stock back, not leave it deducted.
+    if (entry) {
+      setInventory((prev) =>
+        prev.map((i) => (i.id === entry.itemId ? { ...i, quantity: Number(i.quantity || 0) + Number(entry.qty || 0) } : i))
+      );
+    }
+  };
+
+  const addEmployeeEntry = () => {
+    const emp = employees.find((e) => e.id === empForm.employeeId);
+    if (!emp || !empForm.cost) return;
+    const entry = {
+      id: uid(),
+      employeeId: emp.id,
+      employeeName: emp.name,
+      hours: empForm.hours,
+      shiftType: empForm.shiftType,
+      cost: empForm.cost,
+      date: empForm.date,
+    };
+    updateOrder({ employeeEntries: [...(selected.employeeEntries || []), entry] });
+    setEmpForm({ employeeId: "", hours: "", shiftType: "GS", cost: "", date: todayISO() });
+  };
+  const removeEmployeeEntry = (id) => {
+    updateOrder({ employeeEntries: (selected.employeeEntries || []).filter((e) => e.id !== id) });
+  };
+
+  if (orders.length === 0) {
+    return (
+      <div className="space-y-4">
+        <h2 className="font-bold text-lg text-neutral-900">Project Track Sheet</h2>
+        <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
+          <p className="text-sm text-neutral-500">No projects yet — add one in Orders / Projects first, then come back here to track its costs.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const productAllocations = selected?.productAllocations || [];
+  const employeeEntries = selected?.employeeEntries || [];
+  const productCost = productAllocations.reduce((s, e) => s + Number(e.cost || 0), 0);
+  const laborCost = employeeEntries.reduce((s, e) => s + Number(e.cost || 0), 0);
+  // Legacy entries saved before OT/GS tracking existed default to General Shift,
+  // so old data keeps totaling correctly with no migration needed.
+  const gsEntries = employeeEntries.filter((e) => (e.shiftType || "GS") === "GS");
+  const otEntries = employeeEntries.filter((e) => e.shiftType === "OT");
+  const gsHours = gsEntries.reduce((s, e) => s + Number(e.hours || 0), 0);
+  const gsCost = gsEntries.reduce((s, e) => s + Number(e.cost || 0), 0);
+  const otHours = otEntries.reduce((s, e) => s + Number(e.hours || 0), 0);
+  const otCost = otEntries.reduce((s, e) => s + Number(e.cost || 0), 0);
+  const totalCost = productCost + laborCost;
+  const grossWorth = Number(selected?.value || 0);
+  const gstMode = selected?.gstMode || "CGST_SGST";
+  const taxAmount = Math.round(grossWorth * 0.18);
+  const cgst = Math.round(grossWorth * 0.09);
+  const sgst = taxAmount - cgst;
+  const netProfit = grossWorth - totalCost - taxAmount;
+  const marginPct = grossWorth ? ((netProfit / grossWorth) * 100).toFixed(1) : "0.0";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center flex-wrap gap-3">
+        <h2 className="font-bold text-lg text-neutral-900">Project Track Sheet</h2>
+        <div className="flex items-center gap-2">
+          <select className={inputCls} value={selectedId || ""} onChange={(e) => setSelectedId(e.target.value)}>
+            {orders.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}{o.client ? ` · ${o.client}` : ""}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => {
+              setPrintTitle(`${selected.name}-Track-Sheet`);
+              setPrintContent(
+                <ProjectTrackSheetPrintLayout
+                  order={selected}
+                  productAllocations={productAllocations}
+                  employeeEntries={employeeEntries}
+                  productCost={productCost}
+                  laborCost={laborCost}
+                  totalCost={totalCost}
+                  grossWorth={grossWorth}
+                  gstMode={gstMode}
+                  taxAmount={taxAmount}
+                  cgst={cgst}
+                  sgst={sgst}
+                  netProfit={netProfit}
+                  marginPct={marginPct}
+                  company={company}
+                />
+              );
+            }}
+            className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-lg transition"
+          >
+            <Printer size={16} /> Download PDF
+          </button>
+        </div>
+      </div>
+
+      <p className="text-xs text-neutral-400 -mt-2">
+        {selected.client ? `Client: ${selected.client} · ` : ""}Log every product used from Inventory and every worker's hours from Employees & Salary below — cost, tax, and profit update live as you go.
+      </p>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <Card label="Gross Worth" value={fmt(grossWorth)} sub="Project order value" />
+        <Card label="Material Cost" value={fmt(productCost)} tone={productCost ? "danger" : "good"} sub={`${productAllocations.length} product(s) used`} />
+        <Card label="Labor Cost" value={fmt(laborCost)} tone={laborCost ? "danger" : "good"} sub={`${employeeEntries.length} entr${employeeEntries.length === 1 ? "y" : "ies"}`} />
+        <Card label="Total Project Cost" value={fmt(totalCost)} tone={totalCost ? "danger" : "good"} sub="Material + Labor" />
+        <Card label="Tax (18%)" value={fmt(taxAmount)} sub={gstMode === "CGST_SGST" ? `CGST ${fmt(cgst)} + SGST ${fmt(sgst)}` : `IGST ${fmt(taxAmount)}`} />
+        <Card label="Net Profit" value={fmt(netProfit)} tone={netProfit >= 0 ? "good" : "danger"} sub={`Margin ${marginPct}% of gross worth`} />
+      </div>
+
+      <div className="bg-white border border-neutral-200 rounded-xl p-3 flex items-center gap-3">
+        <span className="text-xs font-semibold text-neutral-500">GST type for this project:</span>
+        <select
+          className={`${inputCls} text-xs py-1.5 w-auto`}
+          value={gstMode}
+          onChange={(e) => updateOrder({ gstMode: e.target.value })}
+        >
+          <option value="CGST_SGST">CGST 9% + SGST 9% (Intra-state)</option>
+          <option value="IGST">IGST 18% (Inter-state)</option>
+        </select>
+      </div>
+
+      {/* ---- Products consumed, from Inventory ---- */}
+      <div className="bg-white border border-neutral-200 rounded-xl p-4">
+        <div className="text-sm font-semibold text-neutral-700 mb-2">Products consumed (from Inventory)</div>
+        {productAllocations.length > 0 && (
+          <div className="border border-neutral-200 rounded-lg overflow-hidden mb-3">
+            <table className="w-full text-xs">
+              <thead className="bg-neutral-50 text-neutral-500">
+                <tr>
+                  <th className="text-left px-3 py-2">Product</th>
+                  <th className="text-right px-3 py-2">Qty</th>
+                  <th className="text-right px-3 py-2">Unit cost</th>
+                  <th className="text-right px-3 py-2">Cost</th>
+                  <th className="text-left px-3 py-2">Date</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {productAllocations.map((e) => (
+                  <tr key={e.id} className="border-t border-neutral-100">
+                    <td className="px-3 py-1.5">{e.itemName}</td>
+                    <td className="px-3 py-1.5 text-right">{e.qty}{e.unit ? ` ${e.unit}` : ""}</td>
+                    <td className="px-3 py-1.5 text-right">{fmt(e.unitCost)}</td>
+                    <td className="px-3 py-1.5 text-right">{fmt(e.cost)}</td>
+                    <td className="px-3 py-1.5">{e.date}</td>
+                    <td className="px-3 py-1.5 text-right">
+                      <button onClick={() => removeProduct(e.id)} className="text-neutral-400 hover:text-red-600">
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="grid grid-cols-12 gap-1.5 items-center bg-neutral-50 border border-neutral-200 rounded-lg p-2">
+          <select
+            className={`${inputCls} col-span-6 px-2`}
+            value={prodForm.itemId}
+            onChange={(e) => setProdForm({ ...prodForm, itemId: e.target.value })}
+          >
+            <option value="">— select product from Inventory —</option>
+            {inventory.map((i) => (
+              <option key={i.id} value={i.id}>{i.name} · {fmt(i.unitCost)}/{i.unit || "unit"} · {i.quantity} in stock</option>
+            ))}
+          </select>
+          <input
+            className={`${inputCls} col-span-3 px-2`}
+            type="number"
+            placeholder="Qty used"
+            value={prodForm.qty}
+            onChange={(e) => setProdForm({ ...prodForm, qty: e.target.value })}
+          />
+          <div className="col-span-2 text-xs text-neutral-500 px-1">
+            {prodForm.itemId && prodForm.qty
+              ? fmt(Number(prodForm.qty || 0) * Number(inventory.find((i) => i.id === prodForm.itemId)?.unitCost || 0))
+              : "—"}
+          </div>
+          <button onClick={addProduct} className="col-span-1 text-red-600 hover:text-red-700 flex justify-center">
+            <Plus size={16} />
+          </button>
+        </div>
+        {prodForm.itemId && prodForm.qty && Number(prodForm.qty) > Number(inventory.find((i) => i.id === prodForm.itemId)?.quantity || 0) && (
+          <p className="text-[11px] text-red-600 mt-1.5 font-semibold">
+            ⚠ Only {inventory.find((i) => i.id === prodForm.itemId)?.quantity || 0} {inventory.find((i) => i.id === prodForm.itemId)?.unit || "unit(s)"} in stock — adding this will take Inventory negative.
+          </p>
+        )}
+        {inventory.length === 0 && (
+          <p className="text-[11px] text-neutral-400 mt-1.5">No inventory items yet — add some in the Inventory tab first.</p>
+        )}
+      </div>
+
+      {/* ---- Worker hours, from Employees & Salary ---- */}
+      <div className="bg-white border border-neutral-200 rounded-xl p-4">
+        <div className="text-sm font-semibold text-neutral-700 mb-2">Worker hours (from Employees & Salary)</div>
+
+        {/* Overview: OT vs General Shift hours & cost, split apart so overtime
+            spend is easy to spot rather than buried inside one labor total. */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+          <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-2.5">
+            <div className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide">GS Hours</div>
+            <div className="text-sm font-bold text-neutral-800">{gsHours || 0}</div>
+          </div>
+          <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-2.5">
+            <div className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide">GS Cost</div>
+            <div className="text-sm font-bold text-neutral-800">{fmt(gsCost)}</div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+            <div className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide">OT Hours</div>
+            <div className="text-sm font-bold text-amber-700">{otHours || 0}</div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+            <div className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide">OT Cost</div>
+            <div className="text-sm font-bold text-amber-700">{fmt(otCost)}</div>
+          </div>
+        </div>
+
+        {employeeEntries.length > 0 && (
+          <div className="border border-neutral-200 rounded-lg overflow-hidden mb-3">
+            <table className="w-full text-xs">
+              <thead className="bg-neutral-50 text-neutral-500">
+                <tr>
+                  <th className="text-left px-3 py-2">Employee</th>
+                  <th className="text-right px-3 py-2">Hours</th>
+                  <th className="text-left px-3 py-2">Type</th>
+                  <th className="text-right px-3 py-2">Cost</th>
+                  <th className="text-left px-3 py-2">Date</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {employeeEntries.map((e) => (
+                  <tr key={e.id} className="border-t border-neutral-100">
+                    <td className="px-3 py-1.5">{e.employeeName}</td>
+                    <td className="px-3 py-1.5 text-right">{e.hours || "—"}</td>
+                    <td className="px-3 py-1.5">
+                      <Pill tone={e.shiftType === "OT" ? "amber" : "gray"}>{e.shiftType === "OT" ? "OT" : "GS"}</Pill>
+                    </td>
+                    <td className="px-3 py-1.5 text-right">{fmt(e.cost)}</td>
+                    <td className="px-3 py-1.5">{e.date}</td>
+                    <td className="px-3 py-1.5 text-right">
+                      <button onClick={() => removeEmployeeEntry(e.id)} className="text-neutral-400 hover:text-red-600">
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="grid grid-cols-12 gap-1.5 items-center bg-neutral-50 border border-neutral-200 rounded-lg p-2">
+          <select
+            className={`${inputCls} col-span-3 px-2`}
+            value={empForm.employeeId}
+            onChange={(e) => setEmpForm({ ...empForm, employeeId: e.target.value })}
+          >
+            <option value="">— select employee —</option>
+            {employees.map((e) => (
+              <option key={e.id} value={e.id}>{e.name}{e.role ? ` · ${e.role}` : ""}</option>
+            ))}
+          </select>
+          <input
+            className={`${inputCls} col-span-2 px-2`}
+            type="number"
+            placeholder="Hours"
+            value={empForm.hours}
+            onChange={(e) => setEmpForm({ ...empForm, hours: e.target.value })}
+          />
+          <select
+            className={`${inputCls} col-span-2 px-2`}
+            value={empForm.shiftType}
+            onChange={(e) => setEmpForm({ ...empForm, shiftType: e.target.value })}
+          >
+            <option value="GS">GS (General Shift)</option>
+            <option value="OT">OT (Overtime)</option>
+          </select>
+          <input
+            className={`${inputCls} col-span-2 px-2`}
+            type="number"
+            placeholder="₹ Cost"
+            value={empForm.cost}
+            onChange={(e) => setEmpForm({ ...empForm, cost: e.target.value })}
+          />
+          <input
+            className={`${inputCls} col-span-2 px-2`}
+            type="date"
+            value={empForm.date}
+            onChange={(e) => setEmpForm({ ...empForm, date: e.target.value })}
+          />
+          <button onClick={addEmployeeEntry} className="col-span-1 text-red-600 hover:text-red-700 flex justify-center">
+            <Plus size={16} />
+          </button>
+        </div>
+        {employees.length === 0 && (
+          <p className="text-[11px] text-neutral-400 mt-1.5">No employees added yet — add some in Employees & Salary first.</p>
+        )}
+        <p className="text-[11px] text-neutral-400 mt-1.5">Cost is entered manually per employee for this project — enter whatever portion of their pay applies here.</p>
+      </div>
+
+    </div>
+  );
+}
+
+function ProjectTrackSheetPrintLayout({ order, productAllocations, employeeEntries, productCost, laborCost, totalCost, grossWorth, gstMode, taxAmount, cgst, sgst, netProfit, marginPct, company }) {
+  return (
+    <div style={{ fontFamily: "Arial, sans-serif", padding: 24 }}>
+      <h1 style={{ fontSize: 20, marginBottom: 2 }}>{company?.name || "Company"}</h1>
+      <p style={{ fontSize: 12, color: "#666", marginTop: 0 }}>{company?.address}</p>
+      <h2 style={{ fontSize: 16, marginTop: 20 }}>Project Track Sheet — {order.name}</h2>
+      <p style={{ fontSize: 12, color: "#666" }}>{order.client ? `Client: ${order.client}` : ""}</p>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginTop: 16 }}>
+        <tbody>
+          <tr><td style={{ padding: "4px 0" }}>Gross Worth</td><td style={{ textAlign: "right" }}>{fmt(grossWorth)}</td></tr>
+          <tr><td style={{ padding: "4px 0" }}>Material Cost</td><td style={{ textAlign: "right" }}>{fmt(productCost)}</td></tr>
+          <tr><td style={{ padding: "4px 0" }}>Labor Cost</td><td style={{ textAlign: "right" }}>{fmt(laborCost)}</td></tr>
+          <tr><td style={{ padding: "4px 0", fontWeight: "bold" }}>Total Project Cost</td><td style={{ textAlign: "right", fontWeight: "bold" }}>{fmt(totalCost)}</td></tr>
+          <tr>
+            <td style={{ padding: "4px 0" }}>{gstMode === "CGST_SGST" ? "Tax (CGST 9% + SGST 9%)" : "Tax (IGST 18%)"}</td>
+            <td style={{ textAlign: "right" }}>{fmt(taxAmount)}</td>
+          </tr>
+          <tr><td style={{ padding: "4px 0", fontWeight: "bold" }}>Net Profit</td><td style={{ textAlign: "right", fontWeight: "bold" }}>{fmt(netProfit)} ({marginPct}%)</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style={{ fontSize: 14, marginTop: 24 }}>Products consumed</h3>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid #ccc" }}>
+            <th style={{ textAlign: "left", padding: 4 }}>Product</th>
+            <th style={{ textAlign: "right", padding: 4 }}>Qty</th>
+            <th style={{ textAlign: "right", padding: 4 }}>Unit cost</th>
+            <th style={{ textAlign: "right", padding: 4 }}>Cost</th>
+            <th style={{ textAlign: "left", padding: 4 }}>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {productAllocations.map((e) => (
+            <tr key={e.id} style={{ borderBottom: "1px solid #eee" }}>
+              <td style={{ padding: 4 }}>{e.itemName}</td>
+              <td style={{ padding: 4, textAlign: "right" }}>{e.qty}{e.unit ? ` ${e.unit}` : ""}</td>
+              <td style={{ padding: 4, textAlign: "right" }}>{fmt(e.unitCost)}</td>
+              <td style={{ padding: 4, textAlign: "right" }}>{fmt(e.cost)}</td>
+              <td style={{ padding: 4 }}>{e.date}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h3 style={{ fontSize: 14, marginTop: 24 }}>Worker hours</h3>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid #ccc" }}>
+            <th style={{ textAlign: "left", padding: 4 }}>Employee</th>
+            <th style={{ textAlign: "right", padding: 4 }}>Hours</th>
+            <th style={{ textAlign: "left", padding: 4 }}>Type</th>
+            <th style={{ textAlign: "right", padding: 4 }}>Cost</th>
+            <th style={{ textAlign: "left", padding: 4 }}>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {employeeEntries.map((e) => (
+            <tr key={e.id} style={{ borderBottom: "1px solid #eee" }}>
+              <td style={{ padding: 4 }}>{e.employeeName}</td>
+              <td style={{ padding: 4, textAlign: "right" }}>{e.hours || "—"}</td>
+              <td style={{ padding: 4 }}>{e.shiftType === "OT" ? "OT" : "GS"}</td>
+              <td style={{ padding: 4, textAlign: "right" }}>{fmt(e.cost)}</td>
+              <td style={{ padding: 4 }}>{e.date}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ---------- VENDOR & CLIENT PAYMENTS ----------
 // Indian financial year: April 1 – March 31
 function currentFYRange() {
@@ -2908,7 +3744,7 @@ function clientPaymentStatus(p) {
   return isPastDue ? "Overdue" : "Pending";
 }
 
-function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, orders }) {
+function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, orders, company, setPrintContent, setPrintTitle }) {
   const defaultType = partyType === "Vendor" ? "Payable" : "Receivable";
   const blank = { party: "", partyType, type: defaultType, amount: "", date: todayISO(), status: "Pending", reference: "", orderRef: "", dueDate: "", installments: [] };
   const partyRecords = partyRegistrations.filter((r) => r.partyType === partyType);
@@ -2957,11 +3793,13 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
   const formOverAllocated = Number(form.amount || 0) > 0 && formAllocated > Number(form.amount) + 0.5;
   const formLiveStatus = clientPaymentStatus({ ...form, installments: formInstallments });
 
-  // Projects belonging to the party currently selected in the form (falls back
-  // to all projects if no party chosen yet, so the dropdown isn't empty pre-selection).
-  const relevantOrders = orders.filter(
-    (o) => !form.party || (o.client || "").trim().toLowerCase() === form.party.trim().toLowerCase()
-  );
+  // Client Payments: only show projects belonging to the client currently
+  // selected (matches order.client). Vendor Payments has no such link in the
+  // data — a vendor bill can relate to any project — so show every project,
+  // letting the person pick whichever one this bill is actually for.
+  const relevantOrders = isClient
+    ? orders.filter((o) => !form.party || (o.client || "").trim().toLowerCase() === form.party.trim().toLowerCase())
+    : orders;
 
   const filtered = payments.filter((p) => p.partyType === partyType);
   const q = query.trim().toLowerCase();
@@ -3022,6 +3860,23 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
+          <button
+            onClick={() => {
+              setPrintTitle(`${partyType}-Payments-Register`);
+              setPrintContent(
+                <PaymentsPrintLayout
+                  rows={sortedPayments}
+                  partyType={partyType}
+                  isClient={isClient}
+                  displayStatus={displayStatus}
+                  company={company}
+                />
+              );
+            }}
+            className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-lg transition"
+          >
+            <Printer size={16} /> Download PDF
+          </button>
           <AddButton onClick={openAdd} text="Add payment" />
         </div>
       </div>
@@ -3038,9 +3893,9 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
         emptyMsg={q ? `No ${partyType.toLowerCase()} records match "${query}".` : `No ${partyType.toLowerCase()} payment records yet.`}
         columns={[
           { key: "party", label: "Party" },
-          ...(isClient ? [{ key: "orderRef", label: "Project", render: (r) => r.orderRef || "—" }] : []),
+          { key: "orderRef", label: "Project", render: (r) => r.orderRef || "—" },
           { key: "type", label: "Payable / Receivable" },
-          { key: "amount", label: isClient ? "Invoice Amount" : "Amount", render: (r) => fmt(r.amount) },
+          { key: "amount", label: "Invoice Amount", render: (r) => fmt(r.amount) },
           ...(isClient
             ? [
                 { key: "received", label: "Received", render: (r) => fmt(paymentReceived(r)) },
@@ -3048,7 +3903,7 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
               ]
             : []),
           { key: "date", label: "Date" },
-          ...(isClient ? [{ key: "dueDate", label: "Invoice due", render: (r) => r.dueDate || "—" }] : []),
+          { key: "dueDate", label: "Invoice due", render: (r) => r.dueDate || "—" },
           { key: "status", label: "Status", render: (r) => <Pill tone={statusTone[displayStatus(r)]}>{displayStatus(r)}</Pill> },
           { key: "reference", label: "Reference" },
         ]}
@@ -3072,52 +3927,51 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
                 <option>Receivable</option>
               </select>
             </Field>
-            {isClient && (
-              <Field label="Project / Order">
-                <select
-                  className={inputCls}
-                  value={form.orderRef}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    const matched = orders.find((o) => o.name === val);
-                    setForm((f) => ({
-                      ...f,
-                      orderRef: val,
-                      amount: matched ? matched.value : f.amount,
-                    }));
-                  }}
-                >
-                  <option value="">— none / manual amount —</option>
-                  {relevantOrders.map((o) => (
-                    <option key={o.id} value={o.name}>{o.name} · {fmt(o.value)}</option>
-                  ))}
-                </select>
-                {relevantOrders.length === 0 && (
-                  <span className="text-[11px] text-neutral-400">
-                    No projects found for this client in Orders/Projects yet.
-                  </span>
-                )}
-              </Field>
-            )}
-            <Field label={isClient ? "Invoice Amount (₹)" : "Amount (₹)"}>
+            <Field label="Project / Order">
+              <select
+                className={inputCls}
+                value={form.orderRef}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const matched = orders.find((o) => o.name === val);
+                  setForm((f) => ({
+                    ...f,
+                    orderRef: val,
+                    // Only auto-fill the amount for Client Payments — a project's
+                    // order value is what the client owes you, which has no
+                    // bearing on what you separately owe a vendor for it.
+                    amount: isClient && matched ? matched.value : f.amount,
+                  }));
+                }}
+              >
+                <option value="">— none / manual amount —</option>
+                {relevantOrders.map((o) => (
+                  <option key={o.id} value={o.name}>{o.name} · {fmt(o.value)}</option>
+                ))}
+              </select>
+              {isClient && relevantOrders.length === 0 && (
+                <span className="text-[11px] text-neutral-400">
+                  No projects found for this client in Orders/Projects yet.
+                </span>
+              )}
+            </Field>
+            <Field label="Invoice Amount (₹)">
               <input type="number" className={inputCls} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
-              {form.orderRef && (
+              {isClient && form.orderRef && (
                 <span className="text-[11px] text-neutral-400">Auto-filled from {form.orderRef} — edit if the actual invoice differs.</span>
               )}
             </Field>
             <Field label="Date">
               <input type="date" className={inputCls} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </Field>
-            {isClient && (
-              <Field label="Invoice closing date">
-                <input
-                  type="date"
-                  className={inputCls}
-                  value={form.dueDate}
-                  onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                />
-              </Field>
-            )}
+            <Field label="Invoice closing date">
+              <input
+                type="date"
+                className={inputCls}
+                value={form.dueDate}
+                onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+              />
+            </Field>
             {!isClient && (
               <Field label="Status">
                 <select className={inputCls} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
@@ -3222,6 +4076,49 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
   );
 }
 
+function PaymentsPrintLayout({ rows, partyType, isClient, displayStatus, company }) {
+  const total = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  return (
+    <div style={{ fontFamily: "Arial, sans-serif", padding: 24 }}>
+      <h1 style={{ fontSize: 20, marginBottom: 2 }}>{company?.name || "Company"}</h1>
+      <p style={{ fontSize: 12, color: "#666", marginTop: 0 }}>{company?.address}</p>
+      <h2 style={{ fontSize: 16, marginTop: 20 }}>{partyType} Payments Register</h2>
+      <p style={{ fontSize: 12, color: "#666" }}>Total: {fmt(total)} · {rows.length} record(s)</p>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, marginTop: 12 }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid #ccc" }}>
+            <th style={{ textAlign: "left", padding: 4 }}>Party</th>
+            <th style={{ textAlign: "left", padding: 4 }}>Project</th>
+            <th style={{ textAlign: "right", padding: 4 }}>Invoice Amount</th>
+            {isClient && <th style={{ textAlign: "right", padding: 4 }}>Received</th>}
+            {isClient && <th style={{ textAlign: "right", padding: 4 }}>Balance</th>}
+            <th style={{ textAlign: "left", padding: 4 }}>Date</th>
+            <th style={{ textAlign: "left", padding: 4 }}>Invoice due</th>
+            <th style={{ textAlign: "left", padding: 4 }}>Status</th>
+            <th style={{ textAlign: "left", padding: 4 }}>Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id} style={{ borderBottom: "1px solid #eee" }}>
+              <td style={{ padding: 4 }}>{r.party}</td>
+              <td style={{ padding: 4 }}>{r.orderRef || "—"}</td>
+              <td style={{ padding: 4, textAlign: "right" }}>{fmt(r.amount)}</td>
+              {isClient && <td style={{ padding: 4, textAlign: "right" }}>{fmt(paymentReceived(r))}</td>}
+              {isClient && <td style={{ padding: 4, textAlign: "right" }}>{fmt(Number(r.amount || 0) - paymentReceived(r))}</td>}
+              <td style={{ padding: 4 }}>{r.date}</td>
+              <td style={{ padding: 4 }}>{r.dueDate || "—"}</td>
+              <td style={{ padding: 4 }}>{displayStatus(r)}</td>
+              <td style={{ padding: 4 }}>{r.reference || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ---------- DELIVERY DOCUMENTS (Challan + E-Way Bill reference) ----------
 const REASONS = ["Supply", "Job Work", "Sales Return", "Exhibition / Fair", "Own Use", "Others"];
 const TRANSPORT_MODES = ["Road", "Rail", "Air", "Ship"];
@@ -3305,7 +4202,7 @@ function DeliveryDocsTab({ docs, setDocs, company, setCompany, orders, partyRegi
             <input className={inputCls} value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} />
           </Field>
           <Field label="GSTIN">
-            <input className={inputCls} value={company.gstin} onChange={(e) => setCompany({ ...company, gstin: e.target.value })} />
+            <input className={inputCls} value={company.gstin} maxLength={15} onChange={(e) => setCompany({ ...company, gstin: formatGSTINStrict(e.target.value) })} />
           </Field>
           <div className="col-span-2">
             <Field label="Address">
@@ -3374,7 +4271,7 @@ function DeliveryDocsTab({ docs, setDocs, company, setCompany, orders, partyRegi
                 }}
               />
               <Field label="Client GSTIN (if registered)">
-                <input className={inputCls} value={form.consigneeGstin} onChange={(e) => setForm({ ...form, consigneeGstin: e.target.value })} />
+                <input className={inputCls} value={form.consigneeGstin} maxLength={15} onChange={(e) => setForm({ ...form, consigneeGstin: formatGSTINStrict(e.target.value) })} />
               </Field>
               <div className="col-span-2">
                 <Field label="Delivery address">
@@ -4223,6 +5120,36 @@ function formatGSTIN(raw) {
   return raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 15);
 }
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+// Enforces the GSTIN shape live, position by position — same approach as
+// formatPanStrict, since a GSTIN literally has a PAN embedded inside it
+// (positions 3–12): 2 digits (state code) + 5 letters + 4 digits + 1 letter
+// (that's the embedded PAN) + 1 entity code (1-9 or A-Z) + a fixed "Z" +
+// 1 checksum character. A wrong-type keystroke for the current position is
+// simply dropped instead of being accepted and only flagged later.
+function formatGSTINStrict(raw) {
+  const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  let result = "";
+  for (const ch of cleaned) {
+    const pos = result.length;
+    if (pos < 2) {
+      if (/[0-9]/.test(ch)) result += ch;
+    } else if (pos < 7) {
+      if (/[A-Z]/.test(ch)) result += ch;
+    } else if (pos < 11) {
+      if (/[0-9]/.test(ch)) result += ch;
+    } else if (pos === 11) {
+      if (/[A-Z]/.test(ch)) result += ch;
+    } else if (pos === 12) {
+      if (/[1-9A-Z]/.test(ch)) result += ch;
+    } else if (pos === 13) {
+      if (ch === "Z") result += ch;
+    } else if (pos === 14) {
+      if (/[0-9A-Z]/.test(ch)) result += ch;
+    }
+    if (result.length === 15) break;
+  }
+  return result;
+}
 
 const blankPartyReg = () => ({
   partyType: "Client",
@@ -4310,6 +5237,18 @@ function PartyRegistrationTab({ registrations, setRegistrations, company, setPri
         </div>
       </div>
 
+      <div className="flex justify-end -mt-2">
+        <button
+          onClick={() => {
+            setPrintTitle(`${viewType}-Registration-Register`);
+            setPrintContent(<PartyRegistrationListPrintLayout registrations={filteredRegistrations} viewType={viewType} company={company} />);
+          }}
+          className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-lg transition"
+        >
+          <Printer size={16} /> Download PDF
+        </button>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <Card label={`${viewType}s Registered`} value={viewRegistrations.length} sub={`Out of ${registrations.length} total — ${clientCount} Clients · ${vendorCount} Vendors`} />
         <Card label={`${viewType} MSME`} value={viewMsmeCount} tone={viewMsmeCount ? "good" : "default"} sub={`${viewNonMsmeCount} Non-MSME`} />
@@ -4373,10 +5312,11 @@ function PartyRegistrationTab({ registrations, setRegistrations, company, setPri
                 value={form.gstin}
                 maxLength={15}
                 placeholder="22AAAAA0000A1Z5"
-                onChange={(e) => setForm({ ...form, gstin: formatGSTIN(e.target.value) })}
+                onChange={(e) => setForm({ ...form, gstin: formatGSTINStrict(e.target.value) })}
               />
-              {form.gstin.length === 15 && !GSTIN_REGEX.test(form.gstin) && (
-                <span className="text-xs text-amber-600">Doesn't match the standard GSTIN pattern — double-check it.</span>
+              <span className="text-[11px] text-neutral-400">Format: 2 digits + 5 letters + 4 digits + 1 letter + entity code + "Z" + checksum.</span>
+              {form.gstin && form.gstin.length < 15 && (
+                <span className="text-xs text-amber-600">GSTIN must be exactly 15 characters — {15 - form.gstin.length} more needed.</span>
               )}
             </Field>
             <Field label="MSME Status">
@@ -4394,7 +5334,13 @@ function PartyRegistrationTab({ registrations, setRegistrations, company, setPri
               <input className={inputCls} value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} />
             </Field>
             <Field label="Account number">
-              <input className={inputCls} value={form.accountNumber} onChange={(e) => setForm({ ...form, accountNumber: e.target.value })} />
+              <input
+                className={inputCls}
+                inputMode="numeric"
+                value={form.accountNumber}
+                onChange={(e) => setForm({ ...form, accountNumber: formatAccountNumber(e.target.value) })}
+              />
+              <span className="text-[11px] text-neutral-400">Numbers only.</span>
             </Field>
             <Field label="IFSC code">
               <input className={inputCls} value={form.ifsc} onChange={(e) => setForm({ ...form, ifsc: e.target.value })} />
@@ -4458,6 +5404,42 @@ function PartyRegistrationTab({ registrations, setRegistrations, company, setPri
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+function PartyRegistrationListPrintLayout({ registrations, viewType, company }) {
+  return (
+    <div style={{ fontFamily: "Arial, sans-serif", padding: 24 }}>
+      <h1 style={{ fontSize: 20, marginBottom: 2 }}>{company?.name || "Company"}</h1>
+      <p style={{ fontSize: 12, color: "#666", marginTop: 0 }}>{company?.address}</p>
+      <h2 style={{ fontSize: 16, marginTop: 20 }}>{viewType} Registration Register</h2>
+      <p style={{ fontSize: 12, color: "#666" }}>{registrations.length} {viewType.toLowerCase()}(s)</p>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, marginTop: 12 }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid #ccc" }}>
+            <th style={{ textAlign: "left", padding: 4 }}>Name</th>
+            <th style={{ textAlign: "left", padding: 4 }}>GSTIN</th>
+            <th style={{ textAlign: "left", padding: 4 }}>MSME Status</th>
+            <th style={{ textAlign: "left", padding: 4 }}>Primary Contact</th>
+            <th style={{ textAlign: "left", padding: 4 }}>Secondary Contact</th>
+            <th style={{ textAlign: "left", padding: 4 }}>Bank / A/c No.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {registrations.map((r) => (
+            <tr key={r.id} style={{ borderBottom: "1px solid #eee" }}>
+              <td style={{ padding: 4 }}>{r.name}</td>
+              <td style={{ padding: 4 }}>{r.gstin || "—"}</td>
+              <td style={{ padding: 4 }}>{r.msmeStatus}</td>
+              <td style={{ padding: 4 }}>{r.authority1Name ? `${r.authority1Name} (${r.authority1Contact || "—"})` : "—"}</td>
+              <td style={{ padding: 4 }}>{r.authority2Name ? `${r.authority2Name} (${r.authority2Contact || "—"})` : "—"}</td>
+              <td style={{ padding: 4 }}>{r.bankName ? `${r.bankName} · ${r.accountNumber || "—"}` : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -4562,8 +5544,35 @@ function ProjectCompletionPrintLayout({ order, rec, employees, company }) {
   );
 }
 
-function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWorkflow, company, setPrintContent, setPrintTitle }) {
+function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWorkflow, materialRequests, setMaterialRequests, company, setPrintContent, setPrintTitle }) {
   const [detailOrderId, setDetailOrderId] = useState(null);
+
+  // Material Requests: a way for whoever's running the project to flag "we
+  // need more thinner/resin/clear coat for this job" — visible directly in
+  // the Inventory tab so the Purchase Manager sees it and can order it in.
+  const [matReqForm, setMatReqForm] = useState({ itemName: "", qty: "", unit: "", note: "" });
+  const projectRequests = detailOrderId ? materialRequests.filter((r) => r.orderId === detailOrderId) : [];
+
+  const addMaterialRequest = () => {
+    if (!detailOrderId || !matReqForm.itemName.trim() || !matReqForm.qty) return;
+    const order = orders.find((o) => o.id === detailOrderId);
+    const request = {
+      id: uid(),
+      orderId: detailOrderId,
+      orderName: order?.name || "",
+      itemName: matReqForm.itemName.trim(),
+      qty: matReqForm.qty,
+      unit: matReqForm.unit,
+      note: matReqForm.note.trim(),
+      status: "Pending",
+      requestedDate: todayISO(),
+    };
+    setMaterialRequests((prev) => [...prev, request]);
+    setMatReqForm({ itemName: "", qty: "", unit: "", note: "" });
+  };
+  const cancelMaterialRequest = (id) => {
+    setMaterialRequests((prev) => prev.filter((r) => r.id !== id));
+  };
 
   // The link: any order without a workflow record yet gets one automatically,
   // starting at the Marketing stage — this is what makes new Orders/Projects
@@ -4892,6 +5901,96 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Material requests — notifies the Purchase Manager via Inventory */}
+          <div className="mt-4">
+            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Material requests (notifies the Purchase Manager)</div>
+            <p className="text-xs text-neutral-400 mb-2">
+              Flag anything this project still needs — thinner, resin, clear coat, whatever's short — even if it isn't in Inventory yet. It shows up as a pending request on the Inventory tab for the Purchase Manager to buy and add in.
+            </p>
+            {projectRequests.length > 0 && (
+              <div className="border border-neutral-200 rounded-lg overflow-hidden mb-3">
+                <table className="w-full text-xs">
+                  <thead className="bg-neutral-50 text-neutral-500">
+                    <tr>
+                      <th className="text-left px-3 py-2">Material</th>
+                      <th className="text-right px-3 py-2">No. of Units</th>
+                      <th className="text-left px-3 py-2">Unit</th>
+                      <th className="text-left px-3 py-2">Requirement / Notes</th>
+                      <th className="text-left px-3 py-2">Requested</th>
+                      <th className="text-left px-3 py-2">Status</th>
+                      <th className="px-3 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projectRequests.map((r) => (
+                      <tr key={r.id} className="border-t border-neutral-100">
+                        <td className="px-3 py-1.5 font-medium text-neutral-800">{r.itemName}</td>
+                        <td className="px-3 py-1.5 text-right">{r.qty}</td>
+                        <td className="px-3 py-1.5 text-neutral-500">{r.unit || "—"}</td>
+                        <td className="px-3 py-1.5 text-neutral-500">{r.note || "—"}</td>
+                        <td className="px-3 py-1.5">{r.requestedDate}</td>
+                        <td className="px-3 py-1.5">
+                          <Pill tone={r.status === "Purchased" ? "green" : r.status === "Pending" ? "amber" : "gray"}>{r.status}</Pill>
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          {r.status === "Pending" && (
+                            <button onClick={() => cancelMaterialRequest(r.id)} className="text-neutral-400 hover:text-red-600">
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="grid grid-cols-12 gap-1.5 items-start bg-neutral-50 border border-neutral-200 rounded-lg p-2">
+              <div className="col-span-4">
+                <input
+                  className={`${inputCls} w-full px-2`}
+                  placeholder="Material (e.g. Thinner)"
+                  value={matReqForm.itemName}
+                  onChange={(e) => setMatReqForm({ ...matReqForm, itemName: e.target.value })}
+                />
+              </div>
+              <div className="col-span-2">
+                <input
+                  className={`${inputCls} w-full px-2`}
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  placeholder="No. of Units"
+                  value={matReqForm.qty}
+                  onChange={(e) => setMatReqForm({ ...matReqForm, qty: e.target.value })}
+                />
+              </div>
+              <div className="col-span-2">
+                <select
+                  className={`${inputCls} w-full px-2`}
+                  value={matReqForm.unit}
+                  onChange={(e) => setMatReqForm({ ...matReqForm, unit: e.target.value })}
+                >
+                  <option value="">Unit</option>
+                  {UNIT_OPTIONS.map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-3">
+                <input
+                  className={`${inputCls} w-full px-2`}
+                  placeholder="Requirement / Notes"
+                  value={matReqForm.note}
+                  onChange={(e) => setMatReqForm({ ...matReqForm, note: e.target.value })}
+                />
+              </div>
+              <button onClick={addMaterialRequest} className="col-span-1 text-red-600 hover:text-red-700 flex justify-center pt-2">
+                <Plus size={16} />
+              </button>
             </div>
           </div>
         </Modal>
