@@ -314,7 +314,7 @@ function Table({ columns, rows, onDelete, onEdit, emptyMsg, hideActions }) {
                     </button>
                   )}
                   <button
-                    onClick={() => onDelete(r.id)}
+                    onClick={() => { if (window.confirm("Are you sure you want to delete this?")) onDelete(r.id); }}
                     className="text-neutral-300 hover:text-red-600 transition"
                     title="Remove"
                   >
@@ -426,7 +426,7 @@ function AttachmentsField({ recordId, label = "Attachments" }) {
               <a href={f.dataUrl} download={f.name} target="_blank" rel="noopener noreferrer" className="text-neutral-700 hover:text-red-600 truncate">
                 {f.name} <span className="text-neutral-400">({(f.size / 1024).toFixed(0)} KB)</span>
               </a>
-              <button onClick={() => removeFile(f.id)} className="text-neutral-300 hover:text-red-600 ml-2 shrink-0">
+              <button onClick={() => { if (window.confirm(`Delete "${f.name}"? This can't be undone.`)) removeFile(f.id); }} className="text-neutral-300 hover:text-red-600 ml-2 shrink-0">
                 <Trash2 size={13} />
               </button>
             </div>
@@ -628,7 +628,7 @@ function AccessControlTab({ currentEmail }) {
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button
-                    onClick={() => removeRow(row)}
+                    onClick={() => { if (window.confirm(`Remove access for ${row.email}? They will no longer be able to log in.`)) removeRow(row); }}
                     disabled={row.email === currentEmail}
                     title={row.email === currentEmail ? "You can't remove yourself" : "Remove access"}
                     className="text-neutral-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
@@ -1549,6 +1549,7 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
                       </button>
                       <button
                         onClick={() => {
+                          if (!window.confirm(`Delete "${item.name}" from inventory? This can't be undone.`)) return;
                           setItems(items.filter((i) => i.id !== item.id));
                           setEntries((prev) =>
                             prev.map((e) => (e.inventoryItemId === item.id ? { ...e, fromInventory: false, inventoryItemId: null } : e))
@@ -3471,7 +3472,7 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
                     <td className="px-3 py-1.5 text-right">{fmt(e.cost)}</td>
                     <td className="px-3 py-1.5">{e.date}</td>
                     <td className="px-3 py-1.5 text-right">
-                      <button onClick={() => removeProduct(e.id)} className="text-neutral-400 hover:text-red-600">
+                      <button onClick={() => { if (window.confirm("Remove this item allocation?")) removeProduct(e.id); }} className="text-neutral-400 hover:text-red-600">
                         <Trash2 size={13} />
                       </button>
                     </td>
@@ -3567,7 +3568,7 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
                     <td className="px-3 py-1.5 text-right">{fmt(e.cost)}</td>
                     <td className="px-3 py-1.5">{e.date}</td>
                     <td className="px-3 py-1.5 text-right">
-                      <button onClick={() => removeEmployeeEntry(e.id)} className="text-neutral-400 hover:text-red-600">
+                      <button onClick={() => { if (window.confirm("Remove this employee entry?")) removeEmployeeEntry(e.id); }} className="text-neutral-400 hover:text-red-600">
                         <Trash2 size={13} />
                       </button>
                     </td>
@@ -4140,6 +4141,9 @@ const blankChallan = () => ({
   ewayBillNo: "",
   ewayBillDate: "",
   notes: "",
+  refNote: "",
+  placeOfSupply: "Tamil Nadu (33)",
+  challanType: "Others",
   items: [blankItemRow()],
 });
 
@@ -4209,6 +4213,12 @@ function DeliveryDocsTab({ docs, setDocs, company, setCompany, orders, partyRegi
               <input className={inputCls} value={company.address} onChange={(e) => setCompany({ ...company, address: e.target.value })} />
             </Field>
           </div>
+          <Field label="Phone">
+            <input className={inputCls} value={company.phone || ""} onChange={(e) => setCompany({ ...company, phone: e.target.value })} />
+          </Field>
+          <Field label="Email">
+            <input type="email" className={inputCls} value={company.email || ""} onChange={(e) => setCompany({ ...company, email: e.target.value })} />
+          </Field>
         </div>
       </div>
 
@@ -4230,7 +4240,7 @@ function DeliveryDocsTab({ docs, setDocs, company, setCompany, orders, partyRegi
             label: "",
             render: (r) => (
               <button
-                onClick={() => { setPrintTitle(`Delivery-Challan-${r.challanNo || r.id}`); setPrintContent(<ChallanPrintLayout doc={r} company={company} />); }}
+                onClick={() => { setPrintTitle(`Delivery-Challan-${r.challanNo || r.id}`); setPrintContent(<ChallanTripleCopyLayout doc={r} company={company} />); }}
                 className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700"
               >
                 <Printer size={13} /> Print / PDF
@@ -4290,6 +4300,15 @@ function DeliveryDocsTab({ docs, setDocs, company, setCompany, orders, partyRegi
                 <select className={inputCls} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })}>
                   {REASONS.map((r) => <option key={r}>{r}</option>)}
                 </select>
+              </Field>
+              <Field label="Place of Supply">
+                <input className={inputCls} value={form.placeOfSupply} onChange={(e) => setForm({ ...form, placeOfSupply: e.target.value })} placeholder="e.g. Tamil Nadu (33)" />
+              </Field>
+              <Field label="Challan Type">
+                <input className={inputCls} value={form.challanType} onChange={(e) => setForm({ ...form, challanType: e.target.value })} placeholder="e.g. Others, Sales Return, Job Work" />
+              </Field>
+              <Field label="Ref# (e.g. RETURNABLE 90 DAYS)">
+                <input className={inputCls} value={form.refNote} onChange={(e) => setForm({ ...form, refNote: e.target.value })} />
               </Field>
             </div>
 
@@ -4395,95 +4414,202 @@ function DeliveryDocsTab({ docs, setDocs, company, setCompany, orders, partyRegi
   );
 }
 
-function ChallanPrintLayout({ doc, company }) {
-  const total = (doc.items || []).reduce((s, i) => s + Number(i.qty || 0) * Number(i.rate || 0), 0);
+function numberToWordsIndian(num) {
+  num = Math.round(Number(num) || 0);
+  if (num === 0) return "Zero";
+  const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+    "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+  const twoDigits = (n) => (n < 20 ? ones[n] : tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : ""));
+  const threeDigits = (n) => (n < 100 ? twoDigits(n) : ones[Math.floor(n / 100)] + " Hundred" + (n % 100 ? " " + twoDigits(n % 100) : ""));
+  let result = "";
+  const crore = Math.floor(num / 10000000); num %= 10000000;
+  const lakh = Math.floor(num / 100000); num %= 100000;
+  const thousand = Math.floor(num / 1000); num %= 1000;
+  const hundred = num;
+  if (crore) result += threeDigits(crore) + " Crore ";
+  if (lakh) result += threeDigits(lakh) + " Lakh ";
+  if (thousand) result += threeDigits(thousand) + " Thousand ";
+  if (hundred) result += threeDigits(hundred);
+  return result.trim();
+}
+function amountInWords(amount) {
+  return `Indian Rupee ${numberToWordsIndian(amount)} Only`;
+}
+function isInterStateGST(companyGstin, clientGstin) {
+  if (!companyGstin || !clientGstin || companyGstin.length < 2 || clientGstin.length < 2) return false;
+  return companyGstin.slice(0, 2) !== clientGstin.slice(0, 2);
+}
+const moneyFmt = (n) => Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function ChallanPrintLayout({ doc, company, copyLabel }) {
+  const cell = { border: "1px solid #ddd", padding: "6px" };
+  const items = (doc.items || []).filter((i) => i.description);
+  const subTotal = items.reduce((s, i) => s + Number(i.qty || 0) * Number(i.rate || 0), 0);
+  const interState = isInterStateGST(company.gstin, doc.consigneeGstin);
+  const cgst = interState ? 0 : subTotal * 0.09;
+  const sgst = interState ? 0 : subTotal * 0.09;
+  const igst = interState ? subTotal * 0.18 : 0;
+  const grandTotal = subTotal + cgst + sgst + igst;
+
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", color: "#111", padding: "24px", maxWidth: "800px", margin: "0 auto" }}>
-      <div style={{ borderBottom: "2px solid #dc2626", paddingBottom: "10px", marginBottom: "16px" }}>
-        <div style={{ fontSize: "20px", fontWeight: "bold" }}>{company.name}</div>
-        <div style={{ fontSize: "12px", color: "#555" }}>{company.address}</div>
-        {company.gstin && <div style={{ fontSize: "12px", color: "#555" }}>GSTIN: {company.gstin}</div>}
-      </div>
-
-      <div style={{ textAlign: "center", fontSize: "16px", fontWeight: "bold", letterSpacing: "1px", margin: "10px 0 16px" }}>
-        DELIVERY CHALLAN
-      </div>
-
-      <table style={{ width: "100%", fontSize: "12px", marginBottom: "14px" }}>
+    <div style={{ fontFamily: "Arial, sans-serif", color: "#222", padding: "28px", maxWidth: "820px", margin: "0 auto", position: "relative" }}>
+      {/* Header: company left, DELIVERY CHALLAN + copy tag + challan# right */}
+      <table style={{ width: "100%", marginBottom: "10px" }}>
         <tbody>
           <tr>
-            <td style={{ verticalAlign: "top", width: "50%" }}>
-              <strong>Challan No:</strong> {doc.challanNo}<br />
-              <strong>Date:</strong> {doc.date}<br />
-              <strong>Reason:</strong> {doc.reason}
-              {doc.orderRef && <><br /><strong>Order/Project:</strong> {doc.orderRef}</>}
+            <td style={{ verticalAlign: "top", width: "55%" }}>
+              <div style={{ fontSize: "18px", fontWeight: "bold" }}>{company.name}</div>
+              <div style={{ fontSize: "11px", color: "#555", marginTop: "4px", lineHeight: 1.5 }}>
+                {company.address}<br />
+                {company.gstin && <>GSTIN {company.gstin}<br /></>}
+                {company.phone && <>{company.phone}<br /></>}
+                {company.email && <>{company.email}</>}
+              </div>
             </td>
-            <td style={{ verticalAlign: "top", width: "50%" }}>
-              <strong>Deliver to:</strong><br />
-              {doc.consigneeName}<br />
-              {doc.consigneeAddress}<br />
-              {doc.consigneeGstin && <>GSTIN: {doc.consigneeGstin}</>}
+            <td style={{ verticalAlign: "top", width: "45%", textAlign: "right" }}>
+              <div style={{ display: "inline-block", border: "1px solid #999", borderRadius: "3px", padding: "2px 10px", fontSize: "9px", letterSpacing: "1px", color: "#555" }}>
+                {copyLabel || "ORIGINAL"}
+              </div>
+              <div style={{ fontSize: "22px", fontWeight: "bold", letterSpacing: "1px", marginTop: "6px" }}>DELIVERY CHALLAN</div>
+              <div style={{ fontSize: "12px", color: "#555", marginTop: "2px" }}>Delivery Challan# {doc.challanNo}</div>
             </td>
           </tr>
         </tbody>
       </table>
 
-      <table style={{ width: "100%", fontSize: "12px", marginBottom: "14px", border: "1px solid #ddd", borderCollapse: "collapse" }}>
+      {/* Deliver To + meta */}
+      <table style={{ width: "100%", fontSize: "12px", marginTop: "16px", marginBottom: "10px" }}>
         <tbody>
           <tr>
-            <td style={{ border: "1px solid #ddd", padding: "6px" }}>
-              <strong>Transport mode:</strong> {doc.transportMode}<br />
-              <strong>Vehicle no.:</strong> {doc.vehicleNo || "—"}<br />
-              <strong>Transporter:</strong> {doc.transporterName || "—"}<br />
-              <strong>Distance:</strong> {doc.distanceKm ? `${doc.distanceKm} km` : "—"}
+            <td style={{ verticalAlign: "top", width: "55%" }}>
+              <div style={{ color: "#888", fontSize: "11px" }}>Deliver To</div>
+              <div style={{ fontWeight: "bold", marginTop: "2px" }}>{doc.consigneeName}</div>
+              <div style={{ color: "#333", marginTop: "2px", lineHeight: 1.5 }}>
+                {doc.consigneeAddress}<br />
+                {doc.consigneeGstin && <>GSTIN {doc.consigneeGstin}</>}
+              </div>
             </td>
-            <td style={{ border: "1px solid #ddd", padding: "6px" }}>
-              <strong>E-Way Bill No.:</strong> {doc.ewayBillNo || "Not applicable / generated separately"}<br />
-              {doc.ewayBillDate && <><strong>Generated on:</strong> {doc.ewayBillDate}</>}
+            <td style={{ verticalAlign: "top", width: "45%" }}>
+              <table style={{ width: "100%", fontSize: "12px" }}>
+                <tbody>
+                  <tr><td style={{ color: "#888", padding: "2px 0" }}>Challan Date :</td><td style={{ textAlign: "right", padding: "2px 0" }}>{doc.date}</td></tr>
+                  {doc.refNote && <tr><td style={{ color: "#888", padding: "2px 0" }}>Ref# :</td><td style={{ textAlign: "right", padding: "2px 0" }}>{doc.refNote}</td></tr>}
+                  <tr><td style={{ color: "#888", padding: "2px 0" }}>Challan Type :</td><td style={{ textAlign: "right", padding: "2px 0" }}>{doc.challanType}</td></tr>
+                </tbody>
+              </table>
             </td>
           </tr>
         </tbody>
       </table>
 
-      <table style={{ width: "100%", fontSize: "12px", borderCollapse: "collapse", marginBottom: "14px" }}>
+      <div style={{ fontSize: "12px", color: "#333", marginBottom: "10px" }}>Place Of Supply: {doc.placeOfSupply}</div>
+
+      {/* Items */}
+      <table style={{ width: "100%", fontSize: "12px", borderCollapse: "collapse", marginBottom: "0" }}>
         <thead>
-          <tr style={{ background: "#f3f3f3" }}>
-            <th style={{ border: "1px solid #ddd", padding: "6px", textAlign: "left" }}>#</th>
-            <th style={{ border: "1px solid #ddd", padding: "6px", textAlign: "left" }}>Description</th>
-            <th style={{ border: "1px solid #ddd", padding: "6px", textAlign: "left" }}>HSN</th>
-            <th style={{ border: "1px solid #ddd", padding: "6px", textAlign: "right" }}>Qty</th>
-            <th style={{ border: "1px solid #ddd", padding: "6px", textAlign: "right" }}>Rate</th>
-            <th style={{ border: "1px solid #ddd", padding: "6px", textAlign: "right" }}>Amount</th>
+          <tr style={{ background: "#4a4a4a", color: "#fff" }}>
+            <th style={{ padding: "7px 6px", textAlign: "left", fontWeight: "normal" }}>#</th>
+            <th style={{ padding: "7px 6px", textAlign: "left", fontWeight: "normal" }}>Item &amp; Description</th>
+            <th style={{ padding: "7px 6px", textAlign: "left", fontWeight: "normal" }}>HSN/SAC</th>
+            <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: "normal" }}>Qty</th>
+            <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: "normal" }}>Rate</th>
+            <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: "normal" }}>Amount</th>
           </tr>
         </thead>
         <tbody>
-          {(doc.items || []).filter((i) => i.description).map((it, idx) => (
-            <tr key={it.id || idx}>
-              <td style={{ border: "1px solid #ddd", padding: "6px" }}>{idx + 1}</td>
-              <td style={{ border: "1px solid #ddd", padding: "6px" }}>{it.description}</td>
-              <td style={{ border: "1px solid #ddd", padding: "6px" }}>{it.hsn}</td>
-              <td style={{ border: "1px solid #ddd", padding: "6px", textAlign: "right" }}>{it.qty} {it.unit}</td>
-              <td style={{ border: "1px solid #ddd", padding: "6px", textAlign: "right" }}>{fmt(it.rate)}</td>
-              <td style={{ border: "1px solid #ddd", padding: "6px", textAlign: "right" }}>{fmt(Number(it.qty || 0) * Number(it.rate || 0))}</td>
+          {items.map((it, idx) => (
+            <tr key={it.id || idx} style={{ borderBottom: "1px solid #eee" }}>
+              <td style={{ padding: "7px 6px" }}>{idx + 1}</td>
+              <td style={{ padding: "7px 6px" }}>{it.description}</td>
+              <td style={{ padding: "7px 6px" }}>{it.hsn}</td>
+              <td style={{ padding: "7px 6px", textAlign: "right" }}>{moneyFmt(it.qty)}</td>
+              <td style={{ padding: "7px 6px", textAlign: "right" }}>{moneyFmt(it.rate)}</td>
+              <td style={{ padding: "7px 6px", textAlign: "right" }}>{moneyFmt(Number(it.qty || 0) * Number(it.rate || 0))}</td>
             </tr>
           ))}
+        </tbody>
+      </table>
+
+      {/* Totals */}
+      <table style={{ width: "100%", fontSize: "12px", marginTop: "6px" }}>
+        <tbody>
           <tr>
-            <td colSpan="5" style={{ border: "1px solid #ddd", padding: "6px", textAlign: "right", fontWeight: "bold" }}>Total</td>
-            <td style={{ border: "1px solid #ddd", padding: "6px", textAlign: "right", fontWeight: "bold" }}>{fmt(total)}</td>
+            <td></td>
+            <td style={{ width: "180px", color: "#555", padding: "3px 6px", textAlign: "right" }}>Sub Total</td>
+            <td style={{ width: "110px", textAlign: "right", padding: "3px 6px" }}>{moneyFmt(subTotal)}</td>
+          </tr>
+          {interState ? (
+            <tr>
+              <td></td>
+              <td style={{ color: "#555", padding: "3px 6px", textAlign: "right" }}>IGST (18%)</td>
+              <td style={{ textAlign: "right", padding: "3px 6px" }}>{moneyFmt(igst)}</td>
+            </tr>
+          ) : (
+            <>
+              <tr>
+                <td></td>
+                <td style={{ color: "#555", padding: "3px 6px", textAlign: "right" }}>CGST9 (9%)</td>
+                <td style={{ textAlign: "right", padding: "3px 6px" }}>{moneyFmt(cgst)}</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td style={{ color: "#555", padding: "3px 6px", textAlign: "right" }}>SGST9 (9%)</td>
+                <td style={{ textAlign: "right", padding: "3px 6px" }}>{moneyFmt(sgst)}</td>
+              </tr>
+            </>
+          )}
+          <tr style={{ borderTop: "1px solid #ccc" }}>
+            <td></td>
+            <td style={{ fontWeight: "bold", padding: "6px", textAlign: "right" }}>Total</td>
+            <td style={{ fontWeight: "bold", padding: "6px", textAlign: "right" }}>{fmt(grandTotal)}</td>
           </tr>
         </tbody>
       </table>
 
-      {doc.notes && <div style={{ fontSize: "12px", marginBottom: "14px" }}><strong>Notes:</strong> {doc.notes}</div>}
+      <div style={{ fontSize: "11px", textAlign: "right", marginTop: "4px" }}>
+        <span style={{ color: "#888" }}>Total In Words: </span>
+        <strong style={{ fontStyle: "italic" }}>{amountInWords(grandTotal)}</strong>
+      </div>
+
+      {doc.notes && (
+        <div style={{ fontSize: "12px", marginTop: "24px" }}>
+          <div style={{ color: "#888", fontSize: "11px" }}>Notes</div>
+          {doc.notes}
+        </div>
+      )}
 
       <table style={{ width: "100%", fontSize: "12px", marginTop: "40px" }}>
         <tbody>
           <tr>
-            <td style={{ width: "50%" }}>____________________<br />Dispatched by</td>
-            <td style={{ width: "50%" }}>____________________<br />Received by (client signature & stamp)</td>
+            <td style={{ width: "60%", verticalAlign: "bottom" }}>Authorized Signature ____________________</td>
+            <td style={{ width: "40%", textAlign: "center" }}>
+              <div style={{
+                width: "90px", height: "90px", borderRadius: "50%", border: "2px solid #556",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                fontSize: "9px", color: "#556", textAlign: "center", lineHeight: 1.3, margin: "0 auto",
+              }}>
+                {company.name}<br />SEAL
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Renders three copies of the same challan — ORIGINAL, DUPLICATE, TRIPLICATE —
+// as one continuous printable document, each starting on its own page.
+function ChallanTripleCopyLayout({ doc, company }) {
+  const labels = ["ORIGINAL", "DUPLICATE", "TRIPLICATE"];
+  return (
+    <div>
+      {labels.map((label, i) => (
+        <div key={label} style={i < labels.length - 1 ? { pageBreakAfter: "always", breakAfter: "page" } : undefined}>
+          <ChallanPrintLayout doc={doc} company={company} copyLabel={label} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -5937,7 +6063,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                         </td>
                         <td className="px-3 py-1.5 text-right">
                           {r.status === "Pending" && (
-                            <button onClick={() => cancelMaterialRequest(r.id)} className="text-neutral-400 hover:text-red-600">
+                            <button onClick={() => { if (window.confirm(`Cancel the request for "${r.itemName}"?`)) cancelMaterialRequest(r.id); }} className="text-neutral-400 hover:text-red-600">
                               <Trash2 size={13} />
                             </button>
                           )}
