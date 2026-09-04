@@ -1837,11 +1837,19 @@ function daysInMonth(monthStr) {
   return new Date(y, m, 0).getDate();
 }
 // Resolves the display code for a given employee/date: real record > Sunday holiday (H) > blank.
+// Permission is independent of the day's primary status, so it's appended rather than replacing it.
 function codeForDate(records, employeeName, dateStr) {
   const rec = records.find((r) => r.employeeName === employeeName && r.date === dateStr);
-  if (rec) return SHORT_CODE[rec.status] || rec.status;
+  if (rec) {
+    const base = SHORT_CODE[rec.status] || rec.status || "";
+    return rec.hasPermission ? `${base}+PM` : base;
+  }
   if (isSunday(dateStr)) return "H";
   return "-";
+}
+function toneForCode(code) {
+  if (code && code.includes("+PM")) return "bg-amber-50 text-amber-700";
+  return CODE_TONE_BG[code] || "text-neutral-500";
 }
 const CODE_TONE_BG = {
   P: "bg-emerald-50 text-emerald-700",
@@ -1863,6 +1871,7 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
   const [date, setDate] = useState(todayISO());
   const [draft, setDraft] = useState({});
   const [draftSlot, setDraftSlot] = useState({});
+  const [draftPermission, setDraftPermission] = useState({});
   const [editRow, setEditRow] = useState(null);
 
   const [historyMode, setHistoryMode] = useState("day");
@@ -1876,6 +1885,10 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
     const found = dayRecords.find((r) => r.employeeName === name);
     return draft[name] ?? found?.status ?? "";
   };
+  const permissionFor = (name) => {
+    const found = dayRecords.find((r) => r.employeeName === name);
+    return draftPermission[name] ?? found?.hasPermission ?? false;
+  };
   const slotFor = (name) => {
     const found = dayRecords.find((r) => r.employeeName === name);
     return draftSlot[name] ?? found?.permissionSlot ?? PERMISSION_SLOTS[0];
@@ -1883,6 +1896,7 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
 
   const mark = (name, status) => setDraft({ ...draft, [name]: status });
   const markSlot = (name, slot) => setDraftSlot({ ...draftSlot, [name]: slot });
+  const togglePermission = (name) => setDraftPermission({ ...draftPermission, [name]: !permissionFor(name) });
 
   const save = () => {
     if (date > todayISO()) return; // guard: never persist attendance for a future date
@@ -1890,23 +1904,26 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
     const newDay = employees
       .map((e) => {
         const status = draft[e.name] ?? dayRecords.find((r) => r.employeeName === e.name)?.status ?? "Not marked";
+        const hasPermission = permissionFor(e.name);
         return {
           id: uid(),
           date,
           employeeName: e.name,
           status,
-          permissionSlot: status === "Permission" ? slotFor(e.name) : undefined,
+          hasPermission,
+          permissionSlot: hasPermission ? slotFor(e.name) : undefined,
         };
       })
-      .filter((r) => r.status !== "Not marked");
+      .filter((r) => r.status !== "Not marked" || r.hasPermission);
     setRecords([...others, ...newDay]);
     setDraft({});
     setDraftSlot({});
+    setDraftPermission({});
   };
 
-  const statusOptions = ["Present", "Half-day", "CL", "Half CL", "ML", "Permission"];
+  const statusOptions = ["Present", "Half-day", "CL", "Half CL", "ML"];
   const toneOf = (s) =>
-    s === "Present" ? "green" : s === "Half-day" ? "amber" : s === "CL" ? "blue" : s === "Half CL" ? "blue" : s === "ML" ? "gray" : s === "Permission" ? "amber" : "gray";
+    s === "Present" ? "green" : s === "Half-day" ? "amber" : s === "CL" ? "blue" : s === "Half CL" ? "blue" : s === "ML" ? "gray" : "gray";
 
   // HR usage: CL/ML tracked per calendar year, Permission tracked per calendar month.
   const usageYear = date.slice(0, 4);
@@ -1921,7 +1938,7 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
       cl: fullCL + halfCL * 0.5, // 2 × Half CL counts as 1 CL against the 12/year quota
       halfCL,
       ml: yearRows.filter((r) => r.status === "ML").length,
-      permission: monthRows.filter((r) => r.status === "Permission").length,
+      permission: monthRows.filter((r) => r.hasPermission).length,
     };
   });
 
@@ -2010,7 +2027,6 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
                             CL: "bg-blue-600 text-white border-blue-600",
                             "Half CL": "bg-sky-400 text-white border-sky-400",
                             ML: "bg-neutral-600 text-white border-neutral-600",
-                            Permission: "bg-amber-500 text-white border-amber-500",
                           }[s]
                         : "text-neutral-500 border-neutral-200 hover:bg-neutral-50"
                     }`}
@@ -2018,7 +2034,19 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
                     {s}
                   </button>
                 ))}
-                {statusFor(e.name) === "Permission" && (
+                <span className="w-px h-4 bg-neutral-200 mx-0.5" />
+                <button
+                  onClick={() => togglePermission(e.name)}
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition ${
+                    permissionFor(e.name)
+                      ? "bg-amber-400 text-white border-amber-400"
+                      : "text-neutral-500 border-neutral-200 hover:bg-neutral-50"
+                  }`}
+                  title="Permission is independent of the day's main status — both can be active together"
+                >
+                  Permission
+                </button>
+                {permissionFor(e.name) && (
                   <select
                     className="border border-neutral-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
                     value={slotFor(e.name)}
@@ -2101,7 +2129,7 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
               { key: "employeeName", label: "Employee" },
               { key: "status", label: "Status", render: (r) => (
                 <Pill tone={toneOf(r.status)}>
-                  {r.status}{r.status === "Permission" && r.permissionSlot ? ` (${r.permissionSlot})` : ""}
+                  {r.status}{r.hasPermission ? ` + Permission${r.permissionSlot ? ` (${r.permissionSlot})` : ""}` : ""}
                 </Pill>
               ) },
             ]}
@@ -2125,7 +2153,18 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
                 ))}
               </select>
             </Field>
-            {editRow.status === "Permission" && (
+            <Field label="Permission">
+              <label className="flex items-center gap-2 text-sm text-neutral-600 mt-1.5">
+                <input
+                  type="checkbox"
+                  checked={!!editRow.hasPermission}
+                  onChange={(e) => setEditRow({ ...editRow, hasPermission: e.target.checked })}
+                  className="w-4 h-4 accent-amber-500"
+                />
+                Also took permission this day
+              </label>
+            </Field>
+            {editRow.hasPermission && (
               <Field label="Permission slot">
                 <select className={inputCls} value={editRow.permissionSlot || PERMISSION_SLOTS[0]} onChange={(e) => setEditRow({ ...editRow, permissionSlot: e.target.value })}>
                   <PermissionSlotOptions />
@@ -2663,7 +2702,7 @@ function MonthlyAttendanceGrid({ employees, records, monthStr }) {
                   <td className="px-2 py-1.5 whitespace-nowrap text-neutral-600">{e.employeeId}</td>
                   <td className="px-2 py-1.5 whitespace-nowrap font-medium text-neutral-800">{e.name}</td>
                   {codes.map((code, i) => (
-                    <td key={i} className={`px-1 py-1.5 text-center ${CODE_TONE_BG[code] || "text-neutral-500"}`}>{code}</td>
+                    <td key={i} className={`px-1 py-1.5 text-center ${toneForCode(code)}`}>{code}</td>
                   ))}
                   <td className="px-2 py-1.5 text-center font-semibold text-neutral-800">{cl}</td>
                   <td className="px-2 py-1.5 text-center font-semibold text-neutral-800">{ml}</td>
@@ -2740,7 +2779,7 @@ function AttendancePrintLayout({ records, employees, company, periodLabel }) {
       halfDay: rows.filter((r) => r.status === "Half-day").length,
       cl: rows.filter((r) => r.status === "CL").length,
       ml: rows.filter((r) => r.status === "ML").length,
-      permission: rows.filter((r) => r.status === "Permission").length,
+      permission: rows.filter((r) => r.hasPermission).length,
     };
   });
   const cell = { border: "1px solid #ddd", padding: "5px", fontSize: "11px" };
@@ -2800,7 +2839,7 @@ function AttendancePrintLayout({ records, employees, company, periodLabel }) {
               <td style={cell}>{r.date}</td>
               <td style={cell}>{r.employeeName}</td>
               <td style={cell}>{r.status}</td>
-              <td style={cell}>{r.status === "Permission" ? r.permissionSlot || "" : ""}</td>
+              <td style={cell}>{r.hasPermission ? r.permissionSlot || "" : ""}</td>
             </tr>
           ))}
         </tbody>
@@ -4668,7 +4707,7 @@ function attendanceSummary(attendance, employeeName, month) {
     halfDay: rows.filter((r) => r.status === "Half-day").length,
     cl: rows.filter((r) => r.status === "CL").length,
     ml: rows.filter((r) => r.status === "ML").length,
-    permission: rows.filter((r) => r.status === "Permission").length,
+    permission: rows.filter((r) => r.hasPermission).length,
     clYear: yearRows.filter((r) => r.status === "CL").length,
     mlYear: yearRows.filter((r) => r.status === "ML").length,
   };
