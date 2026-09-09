@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   LayoutDashboard, Package, Users, CalendarCheck, Wallet, Briefcase,
-  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut, MessageCircle
+  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut, ClipboardList
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import { useAuth } from "./auth/AuthContext.jsx";
@@ -24,7 +24,7 @@ const KEYS = {
   productionWorkflow: "nova-production-workflow",
   legalDocCategories: "nova-legal-doc-categories",
   materialRequests: "nova-material-requests",
-  whatsappRecipients: "nova-whatsapp-recipients",
+  purchaseOrders: "nova-purchase-orders",
 };
 
 // Persistence: Supabase Postgres (table `app_storage`, one row per key) — real
@@ -259,11 +259,11 @@ function PartyPicker({ label, value, onChange, records, onPick, placeholder }) {
   );
 }
 
-function Modal({ title, onClose, children }) {
+function Modal({ title, onClose, children, wide }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto p-4">
       <div className="min-h-full flex items-start justify-center py-8">
-        <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+        <div className={`bg-white rounded-2xl shadow-xl w-full ${wide ? "max-w-3xl" : "max-w-lg"}`}>
           <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200 sticky top-0 bg-white rounded-t-2xl z-10">
             <h3 className="font-bold text-lg text-neutral-900">{title}</h3>
             <button
@@ -671,6 +671,7 @@ const ALL_TABS = [
   { id: "orders", label: "Orders / Projects", icon: Briefcase },
   { id: "trackSheet", label: "Project Track Sheet", icon: FileSpreadsheet },
   { id: "workflow", label: "Production Workflow", icon: Workflow },
+  { id: "purchaseOrders", label: "Purchase Orders", icon: ClipboardList },
   { id: "clientPayments", label: "Client Payments", icon: CreditCard },
   { id: "vendorPayments", label: "Vendor Payments", icon: CreditCard },
   { id: "payroll", label: "Payroll", icon: Receipt },
@@ -702,7 +703,7 @@ export default function NovaOps() {
   const [productionWorkflow, setProductionWorkflow] = useState([]);
   const [legalDocCategories, setLegalDocCategories] = useState([]);
   const [materialRequests, setMaterialRequests] = useState([]);
-  const [whatsappRecipients, setWhatsappRecipients] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [company, setCompany] = useState({ name: "NOVA", address: "", gstin: "" });
   const [printContent, setPrintContent] = useState(null);
   const [printTitle, setPrintTitle] = useState("nova-document");
@@ -748,7 +749,7 @@ export default function NovaOps() {
 
   useEffect(() => {
     (async () => {
-      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc, mr, wr] = await Promise.all([
+      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc, mr, po] = await Promise.all([
         loadList(KEYS.inventory),
         loadList(KEYS.attendance),
         loadList(KEYS.employees),
@@ -764,7 +765,7 @@ export default function NovaOps() {
         loadList(KEYS.productionWorkflow),
         loadList(KEYS.legalDocCategories),
         loadList(KEYS.materialRequests),
-        loadList(KEYS.whatsappRecipients),
+        loadList(KEYS.purchaseOrders),
       ]);
       setInventory(inv);
       setAttendance(att);
@@ -781,7 +782,7 @@ export default function NovaOps() {
       setProductionWorkflow(pw);
       setLegalDocCategories(ldc);
       setMaterialRequests(mr);
-      setWhatsappRecipients(wr);
+      setPurchaseOrders(po);
       setLoading(false);
     })();
   }, []);
@@ -830,8 +831,8 @@ export default function NovaOps() {
     if (!loading) saveList(KEYS.materialRequests, materialRequests);
   }, [materialRequests, loading]);
   useEffect(() => {
-    if (!loading) saveList(KEYS.whatsappRecipients, whatsappRecipients);
-  }, [whatsappRecipients, loading]);
+    if (!loading) saveList(KEYS.purchaseOrders, purchaseOrders);
+  }, [purchaseOrders, loading]);
   useEffect(() => {
     if (!loading) saveObj(KEYS.company, company);
   }, [company, loading]);
@@ -984,8 +985,6 @@ export default function NovaOps() {
             company={company}
             setPrintContent={setPrintContent}
             setPrintTitle={setPrintTitle}
-            whatsappRecipients={whatsappRecipients}
-            setWhatsappRecipients={setWhatsappRecipients}
           />
         )}
         {tab === "employees" && (
@@ -1053,6 +1052,16 @@ export default function NovaOps() {
             materialRequests={materialRequests}
             setMaterialRequests={setMaterialRequests}
             company={company}
+            setPrintContent={setPrintContent}
+            setPrintTitle={setPrintTitle}
+          />
+        )}
+        {tab === "purchaseOrders" && (
+          <PurchaseOrderTab
+            purchaseOrders={purchaseOrders}
+            setPurchaseOrders={setPurchaseOrders}
+            company={company}
+            partyRegistrations={partyRegistrations}
             setPrintContent={setPrintContent}
             setPrintTitle={setPrintTitle}
           />
@@ -1887,7 +1896,7 @@ function formatLeaveCount(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function AttendanceTab({ records, setRecords, employees, company, setPrintContent, setPrintTitle, whatsappRecipients, setWhatsappRecipients }) {
+function AttendanceTab({ records, setRecords, employees, company, setPrintContent, setPrintTitle }) {
   const [date, setDate] = useState(todayISO());
   const [draft, setDraft] = useState({});
   const [draftSlot, setDraftSlot] = useState({});
@@ -1991,51 +2000,6 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
 
   const isFutureDate = date > todayISO();
 
-  // ---- WhatsApp: plain-text daily summary, one-click via wa.me ----
-  const [newRecipientName, setNewRecipientName] = useState("");
-  const [newRecipientPhone, setNewRecipientPhone] = useState("");
-
-  const todaysRecords = records.filter((r) => r.date === date);
-  const waCounts = {
-    present: todaysRecords.filter((r) => r.status === "Present").length,
-    halfDay: todaysRecords.filter((r) => r.status === "Half-day").length,
-    cl: todaysRecords.filter((r) => r.status === "CL" || r.status === "Half CL").length,
-    ml: todaysRecords.filter((r) => r.status === "ML").length,
-    permission: todaysRecords.filter((r) => r.hasPermission).length,
-  };
-  const markedNames = new Set(todaysRecords.map((r) => r.employeeName));
-  const notMarked = employees.filter((e) => !markedNames.has(e.name)).length;
-
-  const buildWhatsAppMessage = () => {
-    const lines = [
-      `*${company.name} — Daily Attendance*`,
-      `Date: ${date}`,
-      "",
-      `Present: ${waCounts.present}`,
-      `Half-day: ${waCounts.halfDay}`,
-      `CL: ${waCounts.cl}`,
-      `ML: ${waCounts.ml}`,
-      `Permission: ${waCounts.permission}`,
-    ];
-    if (notMarked > 0) lines.push(`Not marked yet: ${notMarked}`);
-    lines.push("", "— Sent from Nova Attendance");
-    return lines.join("\n");
-  };
-
-  const addRecipient = () => {
-    const phone = formatPhone10(newRecipientPhone);
-    if (!newRecipientName.trim() || phone.length !== 10) return;
-    setWhatsappRecipients([...whatsappRecipients, { id: uid(), name: newRecipientName.trim(), phone }]);
-    setNewRecipientName("");
-    setNewRecipientPhone("");
-  };
-  const removeRecipient = (id) => setWhatsappRecipients(whatsappRecipients.filter((r) => r.id !== id));
-
-  const sendToRecipient = (phone) => {
-    const url = `https://wa.me/91${phone}?text=${encodeURIComponent(buildWhatsAppMessage())}`;
-    window.open(url, "_blank");
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-3">
@@ -2058,52 +2022,6 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
           <span><strong>{date}</strong> is a future date. Attendance can only be recorded for today or an earlier date — this entry will not be saved.</span>
         </div>
       )}
-
-      <div className="bg-white border border-neutral-200 rounded-xl p-4">
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-          <div className="text-sm font-semibold text-neutral-800">Send today's summary via WhatsApp</div>
-          <span className="text-xs text-neutral-400">Present {waCounts.present} · CL {waCounts.cl} · ML {waCounts.ml} · Permission {waCounts.permission}</span>
-        </div>
-        {whatsappRecipients.length === 0 ? (
-          <p className="text-xs text-neutral-400 mb-2">No recipients added yet — add the Director/MD's WhatsApp number below.</p>
-        ) : (
-          <div className="flex flex-wrap gap-2 mb-3">
-            {whatsappRecipients.map((r) => (
-              <div key={r.id} className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full pl-3 pr-1.5 py-1">
-                <button
-                  onClick={() => sendToRecipient(r.phone)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800"
-                >
-                  <MessageCircle size={13} /> {r.name}
-                </button>
-                <button onClick={() => removeRecipient(r.id)} className="text-emerald-400 hover:text-red-600 ml-1">
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="flex items-center gap-2 flex-wrap">
-          <input
-            className={`${inputCls} w-36`}
-            placeholder="Name (e.g. Director)"
-            value={newRecipientName}
-            onChange={(e) => setNewRecipientName(e.target.value)}
-          />
-          <input
-            className={`${inputCls} w-40`}
-            placeholder="10-digit WhatsApp no."
-            value={newRecipientPhone}
-            onChange={(e) => setNewRecipientPhone(formatPhone10(e.target.value))}
-          />
-          <button
-            onClick={addRecipient}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700"
-          >
-            <Plus size={13} /> Add recipient
-          </button>
-        </div>
-      </div>
 
       {isSunday(date) && (
         <div className="bg-neutral-100 border border-neutral-200 rounded-xl px-4 py-2 text-xs text-neutral-600">
@@ -4774,6 +4692,422 @@ function ChallanTripleCopyLayout({ doc, company }) {
           <ChallanPrintLayout doc={doc} company={company} copyLabel={label} />
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---------- PURCHASE ORDERS ----------
+const blankPOItem = () => ({ id: uid(), description: "", hsn: "", qty: "", unit: "pcs", rate: "" });
+
+// Generates the next Purchase Order ID — e.g. PO-0001, PO-0002... — always
+// unique and continuous, based on whatever the highest number used so far is.
+// Still editable by hand in the form, with a live duplicate check either way.
+function nextPoNumber(purchaseOrders) {
+  const nums = purchaseOrders.map((p) => {
+    const m = /(\d+)\s*$/.exec(p.poNumber || "");
+    return m ? parseInt(m[1], 10) : 0;
+  });
+  const max = nums.length ? Math.max(...nums) : 0;
+  return `PO-${String(max + 1).padStart(4, "0")}`;
+}
+
+const blankPurchaseOrder = () => ({
+  poNumber: "",
+  date: todayISO(),
+  vendorName: "",
+  vendorAddress: "",
+  vendorGstin: "",
+  deliveryAddress: "",
+  taxType: "CGST_SGST", // "CGST_SGST" | "IGST" | "None"
+  notes: "",
+  items: [blankPOItem()],
+});
+
+// Total for a saved purchase order, used in the list table.
+function poGrandTotal(po) {
+  const subtotal = (po.items || []).reduce((s, i) => s + Number(i.qty || 0) * Number(i.rate || 0), 0);
+  const rate = po.taxType === "None" ? 0 : 0.18;
+  return subtotal + Math.round(subtotal * rate);
+}
+
+function PurchaseOrderTab({ purchaseOrders, setPurchaseOrders, company, partyRegistrations, setPrintContent, setPrintTitle }) {
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [activeId, setActiveId] = useState(null);
+  const [form, setForm] = useState(blankPurchaseOrder());
+  const [poNumberWarning, setPoNumberWarning] = useState("");
+
+  const vendorRecords = partyRegistrations.filter((r) => r.partyType === "Vendor");
+
+  const openAdd = () => {
+    setForm({ ...blankPurchaseOrder(), poNumber: nextPoNumber(purchaseOrders) });
+    setEditingId(null);
+    setActiveId(uid());
+    setOpen(true);
+  };
+  const openEdit = (row) => {
+    setForm({ ...blankPurchaseOrder(), ...row, items: row.items?.length ? row.items : [blankPOItem()] });
+    setEditingId(row.id);
+    setActiveId(row.id);
+    setOpen(true);
+  };
+
+  const updateItem = (idx, field, value) => {
+    const items = [...form.items];
+    items[idx] = { ...items[idx], [field]: value };
+    setForm({ ...form, items });
+  };
+  const addItemRow = () => setForm({ ...form, items: [...form.items, blankPOItem()] });
+  const removeItemRow = (idx) => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) });
+
+  // Live totals, recomputed on every keystroke.
+  const subtotal = form.items.reduce((s, i) => s + Number(i.qty || 0) * Number(i.rate || 0), 0);
+  const taxRate = form.taxType === "None" ? 0 : 0.18;
+  const taxAmount = Math.round(subtotal * taxRate);
+  const cgst = form.taxType === "CGST_SGST" ? Math.round(subtotal * 0.09) : 0;
+  const sgst = form.taxType === "CGST_SGST" ? taxAmount - cgst : 0;
+  const igst = form.taxType === "IGST" ? taxAmount : 0;
+  const grandTotal = subtotal + taxAmount;
+
+  // Live uniqueness check on the PO ID — catches manual edits that collide
+  // with an existing one, not just the auto-generated default.
+  useEffect(() => {
+    if (!form.poNumber.trim()) {
+      setPoNumberWarning("");
+      return;
+    }
+    const dup = purchaseOrders.some(
+      (p) => p.id !== editingId && p.poNumber.trim().toLowerCase() === form.poNumber.trim().toLowerCase()
+    );
+    setPoNumberWarning(dup ? "This Purchase Order ID is already in use — it must be unique." : "");
+  }, [form.poNumber, purchaseOrders, editingId]);
+
+  const save = () => {
+    if (!form.poNumber.trim() || !form.vendorName || !form.items.some((i) => i.description)) return;
+    if (poNumberWarning) return;
+    if (editingId) {
+      setPurchaseOrders(purchaseOrders.map((p) => (p.id === editingId ? { ...p, ...form, id: editingId } : p)));
+    } else {
+      setPurchaseOrders([...purchaseOrders, { id: activeId, ...form }]);
+    }
+    setForm(blankPurchaseOrder());
+    setEditingId(null);
+    setOpen(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="font-bold text-lg text-neutral-900">Purchase Orders</h2>
+        <p className="text-xs text-neutral-400 mt-0.5">Raise a purchase order for a vendor — print it or save as PDF.</p>
+      </div>
+      <div className="flex justify-end">
+        <AddButton onClick={openAdd} text="New purchase order" />
+      </div>
+      <Table
+        emptyMsg="No purchase orders yet."
+        columns={[
+          { key: "poNumber", label: "PO No." },
+          { key: "date", label: "Date" },
+          { key: "vendorName", label: "Vendor" },
+          {
+            key: "taxType",
+            label: "Tax",
+            render: (r) => (r.taxType === "None" ? "None" : r.taxType === "IGST" ? "IGST" : "CGST+SGST"),
+          },
+          { key: "total", label: "Total", render: (r) => fmt(poGrandTotal(r)) },
+          {
+            key: "download",
+            label: "",
+            render: (r) => (
+              <button
+                onClick={() => {
+                  setPrintTitle(`Purchase-Order-${r.poNumber || r.id}`);
+                  setPrintContent(<PurchaseOrderPrintLayout po={r} company={company} />);
+                }}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700 whitespace-nowrap"
+              >
+                <Printer size={13} /> Download PDF
+              </button>
+            ),
+          },
+        ]}
+        rows={[...purchaseOrders].sort((a, b) => (a.poNumber < b.poNumber ? 1 : -1))}
+        onDelete={(id) => setPurchaseOrders(purchaseOrders.filter((p) => p.id !== id))}
+        onEdit={openEdit}
+      />
+
+      {open && (
+        <Modal title={editingId ? "Edit purchase order" : "New purchase order"} onClose={() => setOpen(false)} wide>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Purchase Order ID">
+              <input className={inputCls} value={form.poNumber} onChange={(e) => setForm({ ...form, poNumber: e.target.value })} />
+              {poNumberWarning ? (
+                <span className="text-xs text-red-600">{poNumberWarning}</span>
+              ) : (
+                <span className="text-[11px] text-neutral-400">Auto-generated, unique, and continuous — edit only if you need a custom format.</span>
+              )}
+            </Field>
+            <Field label="Date">
+              <input type="date" className={inputCls} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+            </Field>
+
+            <PartyPicker
+              key={editingId || activeId}
+              label="Vendor"
+              value={form.vendorName}
+              onChange={(v) => setForm({ ...form, vendorName: v })}
+              records={vendorRecords}
+              onPick={(rec) => {
+                if (rec) {
+                  setForm((f) => ({
+                    ...f,
+                    vendorName: rec.name,
+                    vendorGstin: rec.gstin || f.vendorGstin,
+                    vendorAddress: rec.address || f.vendorAddress,
+                  }));
+                }
+              }}
+            />
+            <Field label="Vendor GSTIN">
+              <input
+                className={inputCls}
+                maxLength={15}
+                value={form.vendorGstin}
+                onChange={(e) => setForm({ ...form, vendorGstin: formatGSTINStrict(e.target.value) })}
+              />
+            </Field>
+
+            <div className="col-span-2">
+              <Field label="Vendor address">
+                <input className={inputCls} value={form.vendorAddress} onChange={(e) => setForm({ ...form, vendorAddress: e.target.value })} />
+              </Field>
+            </div>
+            <div className="col-span-2">
+              <Field label="Delivery address (where goods should be sent)">
+                <input
+                  className={inputCls}
+                  value={form.deliveryAddress}
+                  onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })}
+                  placeholder={company?.address || ""}
+                />
+              </Field>
+            </div>
+
+            <Field label="Tax">
+              <select className={inputCls} value={form.taxType} onChange={(e) => setForm({ ...form, taxType: e.target.value })}>
+                <option value="CGST_SGST">CGST + SGST (Intra-state)</option>
+                <option value="IGST">IGST (Inter-state)</option>
+                <option value="None">None</option>
+              </select>
+            </Field>
+          </div>
+
+          <div className="border-t border-neutral-100 pt-3 mt-3">
+            <div className="flex justify-between items-center mb-2">
+              <div className="text-sm font-semibold text-neutral-700">Items</div>
+              <button onClick={addItemRow} className="text-xs font-semibold text-red-600 hover:text-red-700 inline-flex items-center gap-1">
+                <Plus size={13} /> Add item
+              </button>
+            </div>
+            <div className="space-y-2">
+              {form.items.map((it, idx) => (
+                <div key={it.id} className="grid grid-cols-12 gap-2 items-center">
+                  <input
+                    className={`${inputCls} col-span-4`}
+                    placeholder="Description"
+                    value={it.description}
+                    onChange={(e) => updateItem(idx, "description", e.target.value)}
+                  />
+                  <input
+                    className={`${inputCls} col-span-2`}
+                    placeholder="HSN"
+                    value={it.hsn}
+                    onChange={(e) => updateItem(idx, "hsn", e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    className={`${inputCls} col-span-2`}
+                    placeholder="Qty"
+                    value={it.qty}
+                    onChange={(e) => updateItem(idx, "qty", e.target.value)}
+                  />
+                  <input
+                    className={`${inputCls} col-span-1`}
+                    placeholder="Unit"
+                    value={it.unit}
+                    onChange={(e) => updateItem(idx, "unit", e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    className={`${inputCls} col-span-2`}
+                    placeholder="Rate ₹"
+                    value={it.rate}
+                    onChange={(e) => updateItem(idx, "rate", e.target.value)}
+                  />
+                  <button
+                    onClick={() => {
+                      if (window.confirm("Are you sure you want to remove this item?")) removeItemRow(idx);
+                    }}
+                    className="col-span-1 text-neutral-300 hover:text-red-600"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-neutral-100 pt-3 mt-3 flex justify-end">
+            <div className="w-64 text-sm space-y-1">
+              <div className="flex justify-between text-neutral-500">
+                <span>Subtotal</span>
+                <span>{fmt(subtotal)}</span>
+              </div>
+              {form.taxType === "CGST_SGST" && (
+                <>
+                  <div className="flex justify-between text-neutral-500">
+                    <span>CGST (9%)</span>
+                    <span>{fmt(cgst)}</span>
+                  </div>
+                  <div className="flex justify-between text-neutral-500">
+                    <span>SGST (9%)</span>
+                    <span>{fmt(sgst)}</span>
+                  </div>
+                </>
+              )}
+              {form.taxType === "IGST" && (
+                <div className="flex justify-between text-neutral-500">
+                  <span>IGST (18%)</span>
+                  <span>{fmt(igst)}</span>
+                </div>
+              )}
+              {form.taxType === "None" && (
+                <div className="flex justify-between text-neutral-500">
+                  <span>Tax</span>
+                  <span>None</span>
+                </div>
+              )}
+              <div className="flex justify-between font-semibold text-neutral-800 border-t border-neutral-200 pt-1">
+                <span>Grand Total</span>
+                <span>{fmt(grandTotal)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-neutral-100 pt-3 mt-3">
+            <Field label="Notes">
+              <textarea
+                className={`${inputCls} w-full`}
+                rows={3}
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                placeholder="Payment terms, special instructions, etc."
+              />
+            </Field>
+          </div>
+
+          {activeId && <AttachmentsField recordId={activeId} label="Attachments" />}
+          <div className="mt-4 flex justify-end">
+            <AddButton onClick={save} text={editingId ? "Update purchase order" : "Save purchase order"} />
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function PurchaseOrderPrintLayout({ po, company }) {
+  const subtotal = (po.items || []).reduce((s, i) => s + Number(i.qty || 0) * Number(i.rate || 0), 0);
+  const taxRate = po.taxType === "None" ? 0 : 0.18;
+  const taxAmount = Math.round(subtotal * taxRate);
+  const cgst = po.taxType === "CGST_SGST" ? Math.round(subtotal * 0.09) : 0;
+  const sgst = po.taxType === "CGST_SGST" ? taxAmount - cgst : 0;
+  const igst = po.taxType === "IGST" ? taxAmount : 0;
+  const grandTotal = subtotal + taxAmount;
+
+  return (
+    <div style={{ fontFamily: "Arial, sans-serif", padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <div>
+          <h1 style={{ fontSize: 20, marginBottom: 2 }}>{company?.name || "Company"}</h1>
+          <p style={{ fontSize: 12, color: "#666", margin: 0 }}>{company?.address}</p>
+          <p style={{ fontSize: 12, color: "#666", margin: 0 }}>GSTIN: {company?.gstin || "—"}</p>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <h2 style={{ fontSize: 18, margin: 0 }}>PURCHASE ORDER</h2>
+          <p style={{ fontSize: 12, margin: 0 }}>PO No: <strong>{po.poNumber}</strong></p>
+          <p style={{ fontSize: 12, margin: 0 }}>Date: {po.date}</p>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24 }}>
+        <div>
+          <p style={{ fontSize: 12, fontWeight: "bold", marginBottom: 2 }}>Vendor</p>
+          <p style={{ fontSize: 12, margin: 0 }}>{po.vendorName}</p>
+          <p style={{ fontSize: 12, margin: 0, color: "#666" }}>{po.vendorAddress}</p>
+          <p style={{ fontSize: 12, margin: 0, color: "#666" }}>GSTIN: {po.vendorGstin || "—"}</p>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <p style={{ fontSize: 12, fontWeight: "bold", marginBottom: 2 }}>Deliver to</p>
+          <p style={{ fontSize: 12, margin: 0, color: "#666" }}>{po.deliveryAddress || company?.address || "—"}</p>
+        </div>
+      </div>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, marginTop: 24 }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid #333" }}>
+            <th style={{ textAlign: "left", padding: 6 }}>Description</th>
+            <th style={{ textAlign: "left", padding: 6 }}>HSN</th>
+            <th style={{ textAlign: "right", padding: 6 }}>Qty</th>
+            <th style={{ textAlign: "left", padding: 6 }}>Unit</th>
+            <th style={{ textAlign: "right", padding: 6 }}>Rate</th>
+            <th style={{ textAlign: "right", padding: 6 }}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(po.items || []).map((it) => (
+            <tr key={it.id} style={{ borderBottom: "1px solid #eee" }}>
+              <td style={{ padding: 6 }}>{it.description}</td>
+              <td style={{ padding: 6 }}>{it.hsn || "—"}</td>
+              <td style={{ padding: 6, textAlign: "right" }}>{it.qty}</td>
+              <td style={{ padding: 6 }}>{it.unit}</td>
+              <td style={{ padding: 6, textAlign: "right" }}>{fmt(it.rate)}</td>
+              <td style={{ padding: 6, textAlign: "right" }}>{fmt(Number(it.qty || 0) * Number(it.rate || 0))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+        <table style={{ fontSize: 12, width: 260 }}>
+          <tbody>
+            <tr><td style={{ padding: 3 }}>Subtotal</td><td style={{ padding: 3, textAlign: "right" }}>{fmt(subtotal)}</td></tr>
+            {po.taxType === "CGST_SGST" && (
+              <>
+                <tr><td style={{ padding: 3 }}>CGST (9%)</td><td style={{ padding: 3, textAlign: "right" }}>{fmt(cgst)}</td></tr>
+                <tr><td style={{ padding: 3 }}>SGST (9%)</td><td style={{ padding: 3, textAlign: "right" }}>{fmt(sgst)}</td></tr>
+              </>
+            )}
+            {po.taxType === "IGST" && (
+              <tr><td style={{ padding: 3 }}>IGST (18%)</td><td style={{ padding: 3, textAlign: "right" }}>{fmt(igst)}</td></tr>
+            )}
+            {po.taxType === "None" && (
+              <tr><td style={{ padding: 3 }}>Tax</td><td style={{ padding: 3, textAlign: "right" }}>None</td></tr>
+            )}
+            <tr style={{ borderTop: "1px solid #333", fontWeight: "bold" }}>
+              <td style={{ padding: 3 }}>Grand Total</td><td style={{ padding: 3, textAlign: "right" }}>{fmt(grandTotal)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {po.notes && (
+        <div style={{ marginTop: 24 }}>
+          <p style={{ fontSize: 12, fontWeight: "bold", marginBottom: 4 }}>Notes</p>
+          <p style={{ fontSize: 12, color: "#444", whiteSpace: "pre-wrap" }}>{po.notes}</p>
+        </div>
+      )}
     </div>
   );
 }
