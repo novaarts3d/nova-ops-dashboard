@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   LayoutDashboard, Package, Users, CalendarCheck, Wallet, Briefcase,
-  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut
+  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut, MessageCircle
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import { useAuth } from "./auth/AuthContext.jsx";
@@ -24,6 +24,7 @@ const KEYS = {
   productionWorkflow: "nova-production-workflow",
   legalDocCategories: "nova-legal-doc-categories",
   materialRequests: "nova-material-requests",
+  whatsappRecipients: "nova-whatsapp-recipients",
 };
 
 // Persistence: Supabase Postgres (table `app_storage`, one row per key) — real
@@ -150,6 +151,17 @@ function formatPanStrict(raw) {
 
 function formatPhone10(raw) {
   return raw.replace(/\D/g, "").slice(0, 10);
+}
+function formatSalary(raw) {
+  return raw.replace(/\D/g, "").slice(0, 6);
+}
+function sanitizeDateInput(value, previous) {
+  // Native date inputs can, in some browsers, let a fast typist accumulate more
+  // than 4 digits in the year segment before the value settles — this rejects
+  // any change where the year portion isn't exactly 4 digits.
+  const year = (value || "").split("-")[0];
+  if (year && year.length !== 4) return previous;
+  return value;
 }
 // Bank account numbers are always numeric — real ones run roughly 9–18 digits
 // depending on the bank, so this strips anything non-numeric and caps length
@@ -690,6 +702,7 @@ export default function NovaOps() {
   const [productionWorkflow, setProductionWorkflow] = useState([]);
   const [legalDocCategories, setLegalDocCategories] = useState([]);
   const [materialRequests, setMaterialRequests] = useState([]);
+  const [whatsappRecipients, setWhatsappRecipients] = useState([]);
   const [company, setCompany] = useState({ name: "NOVA", address: "", gstin: "" });
   const [printContent, setPrintContent] = useState(null);
   const [printTitle, setPrintTitle] = useState("nova-document");
@@ -735,7 +748,7 @@ export default function NovaOps() {
 
   useEffect(() => {
     (async () => {
-      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc, mr] = await Promise.all([
+      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc, mr, wr] = await Promise.all([
         loadList(KEYS.inventory),
         loadList(KEYS.attendance),
         loadList(KEYS.employees),
@@ -751,6 +764,7 @@ export default function NovaOps() {
         loadList(KEYS.productionWorkflow),
         loadList(KEYS.legalDocCategories),
         loadList(KEYS.materialRequests),
+        loadList(KEYS.whatsappRecipients),
       ]);
       setInventory(inv);
       setAttendance(att);
@@ -767,6 +781,7 @@ export default function NovaOps() {
       setProductionWorkflow(pw);
       setLegalDocCategories(ldc);
       setMaterialRequests(mr);
+      setWhatsappRecipients(wr);
       setLoading(false);
     })();
   }, []);
@@ -814,6 +829,9 @@ export default function NovaOps() {
   useEffect(() => {
     if (!loading) saveList(KEYS.materialRequests, materialRequests);
   }, [materialRequests, loading]);
+  useEffect(() => {
+    if (!loading) saveList(KEYS.whatsappRecipients, whatsappRecipients);
+  }, [whatsappRecipients, loading]);
   useEffect(() => {
     if (!loading) saveObj(KEYS.company, company);
   }, [company, loading]);
@@ -966,6 +984,8 @@ export default function NovaOps() {
             company={company}
             setPrintContent={setPrintContent}
             setPrintTitle={setPrintTitle}
+            whatsappRecipients={whatsappRecipients}
+            setWhatsappRecipients={setWhatsappRecipients}
           />
         )}
         {tab === "employees" && (
@@ -1867,7 +1887,7 @@ function formatLeaveCount(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function AttendanceTab({ records, setRecords, employees, company, setPrintContent, setPrintTitle }) {
+function AttendanceTab({ records, setRecords, employees, company, setPrintContent, setPrintTitle, whatsappRecipients, setWhatsappRecipients }) {
   const [date, setDate] = useState(todayISO());
   const [draft, setDraft] = useState({});
   const [draftSlot, setDraftSlot] = useState({});
@@ -1971,6 +1991,51 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
 
   const isFutureDate = date > todayISO();
 
+  // ---- WhatsApp: plain-text daily summary, one-click via wa.me ----
+  const [newRecipientName, setNewRecipientName] = useState("");
+  const [newRecipientPhone, setNewRecipientPhone] = useState("");
+
+  const todaysRecords = records.filter((r) => r.date === date);
+  const waCounts = {
+    present: todaysRecords.filter((r) => r.status === "Present").length,
+    halfDay: todaysRecords.filter((r) => r.status === "Half-day").length,
+    cl: todaysRecords.filter((r) => r.status === "CL" || r.status === "Half CL").length,
+    ml: todaysRecords.filter((r) => r.status === "ML").length,
+    permission: todaysRecords.filter((r) => r.hasPermission).length,
+  };
+  const markedNames = new Set(todaysRecords.map((r) => r.employeeName));
+  const notMarked = employees.filter((e) => !markedNames.has(e.name)).length;
+
+  const buildWhatsAppMessage = () => {
+    const lines = [
+      `*${company.name} — Daily Attendance*`,
+      `Date: ${date}`,
+      "",
+      `Present: ${waCounts.present}`,
+      `Half-day: ${waCounts.halfDay}`,
+      `CL: ${waCounts.cl}`,
+      `ML: ${waCounts.ml}`,
+      `Permission: ${waCounts.permission}`,
+    ];
+    if (notMarked > 0) lines.push(`Not marked yet: ${notMarked}`);
+    lines.push("", "— Sent from Nova Attendance");
+    return lines.join("\n");
+  };
+
+  const addRecipient = () => {
+    const phone = formatPhone10(newRecipientPhone);
+    if (!newRecipientName.trim() || phone.length !== 10) return;
+    setWhatsappRecipients([...whatsappRecipients, { id: uid(), name: newRecipientName.trim(), phone }]);
+    setNewRecipientName("");
+    setNewRecipientPhone("");
+  };
+  const removeRecipient = (id) => setWhatsappRecipients(whatsappRecipients.filter((r) => r.id !== id));
+
+  const sendToRecipient = (phone) => {
+    const url = `https://wa.me/91${phone}?text=${encodeURIComponent(buildWhatsAppMessage())}`;
+    window.open(url, "_blank");
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-3">
@@ -1993,6 +2058,52 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
           <span><strong>{date}</strong> is a future date. Attendance can only be recorded for today or an earlier date — this entry will not be saved.</span>
         </div>
       )}
+
+      <div className="bg-white border border-neutral-200 rounded-xl p-4">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+          <div className="text-sm font-semibold text-neutral-800">Send today's summary via WhatsApp</div>
+          <span className="text-xs text-neutral-400">Present {waCounts.present} · CL {waCounts.cl} · ML {waCounts.ml} · Permission {waCounts.permission}</span>
+        </div>
+        {whatsappRecipients.length === 0 ? (
+          <p className="text-xs text-neutral-400 mb-2">No recipients added yet — add the Director/MD's WhatsApp number below.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {whatsappRecipients.map((r) => (
+              <div key={r.id} className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full pl-3 pr-1.5 py-1">
+                <button
+                  onClick={() => sendToRecipient(r.phone)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800"
+                >
+                  <MessageCircle size={13} /> {r.name}
+                </button>
+                <button onClick={() => removeRecipient(r.id)} className="text-emerald-400 hover:text-red-600 ml-1">
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            className={`${inputCls} w-36`}
+            placeholder="Name (e.g. Director)"
+            value={newRecipientName}
+            onChange={(e) => setNewRecipientName(e.target.value)}
+          />
+          <input
+            className={`${inputCls} w-40`}
+            placeholder="10-digit WhatsApp no."
+            value={newRecipientPhone}
+            onChange={(e) => setNewRecipientPhone(formatPhone10(e.target.value))}
+          />
+          <button
+            onClick={addRecipient}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700"
+          >
+            <Plus size={13} /> Add recipient
+          </button>
+        </div>
+      </div>
 
       {isSunday(date) && (
         <div className="bg-neutral-100 border border-neutral-200 rounded-xl px-4 py-2 text-xs text-neutral-600">
@@ -2310,10 +2421,24 @@ function EmployeesTab({ employees, setEmployees, company, setPrintContent, setPr
               )}
             </Field>
             <Field label="Joining date">
-              <input type="date" className={inputCls} value={form.joiningDate} onChange={(e) => setForm({ ...form, joiningDate: e.target.value })} />
+              <input
+                type="date"
+                className={inputCls}
+                min="1980-01-01"
+                max="2099-12-31"
+                value={form.joiningDate}
+                onChange={(e) => setForm({ ...form, joiningDate: sanitizeDateInput(e.target.value, form.joiningDate) })}
+              />
             </Field>
             <Field label="Monthly salary (₹)">
-              <input type="number" className={inputCls} value={form.salary} onChange={(e) => setForm({ ...form, salary: e.target.value })} />
+              <input
+                type="text"
+                inputMode="numeric"
+                className={inputCls}
+                value={form.salary}
+                placeholder="Up to 6 digits, e.g. 50000"
+                onChange={(e) => setForm({ ...form, salary: formatSalary(e.target.value) })}
+              />
             </Field>
 
             <div className="col-span-2 border-t border-neutral-100 pt-3 text-sm font-semibold text-neutral-700">Bank details</div>
