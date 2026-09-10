@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   LayoutDashboard, Package, Users, CalendarCheck, Wallet, Briefcase,
-  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut, ClipboardList, MessageCircle
+  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut, ClipboardList, Upload, CheckCircle2, Download
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import { useAuth } from "./auth/AuthContext.jsx";
@@ -25,10 +25,9 @@ const KEYS = {
   legalDocCategories: "nova-legal-doc-categories",
   materialRequests: "nova-material-requests",
   purchaseOrders: "nova-purchase-orders",
-  whatsappRecipients: "nova-whatsapp-recipients",
 };
 
-// Persistence: Supabase Postgres (table `app_storage`, one row per key) — real
+// Persistence: Supabase Postgres (table `app_storage`, one row per key) â€” real
 // shared data across every device and every logged-in user. Function
 // signatures are unchanged so every existing loadList/saveList/loadObj/saveObj
 // call site elsewhere in this file needs zero edits.
@@ -79,7 +78,7 @@ function fileToDataUrl(file) {
   });
 }
 
-// Generic table export helpers — `columns` is [{ label, value(row) }, ...]
+// Generic table export helpers â€” `columns` is [{ label, value(row) }, ...]
 function downloadBlob(content, filename, mime) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -88,7 +87,7 @@ function downloadBlob(content, filename, mime) {
   a.download = filename;
   // target=_blank + rel=noopener lets the browser open/download this outside a
   // sandboxed preview iframe (which blocks a same-frame forced download unless
-  // the parent explicitly sets allow-downloads) — the sandbox still permits
+  // the parent explicitly sets allow-downloads) â€” the sandbox still permits
   // popups to escape it, so this is what actually gets the file to save.
   a.target = "_blank";
   a.rel = "noopener noreferrer";
@@ -116,7 +115,7 @@ function exportExcel(rows, columns, filename, sheetName = "Sheet1") {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   // XLSX.writeFile builds its own anchor internally (no way to add target=_blank
-  // to it), which gets blocked the same way in a sandboxed preview iframe — build
+  // to it), which gets blocked the same way in a sandboxed preview iframe â€” build
   // the bytes ourselves and go through the shared downloadBlob() so the fix above
   // applies here too.
   const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
@@ -158,13 +157,13 @@ function formatSalary(raw) {
 }
 function sanitizeDateInput(value, previous) {
   // Native date inputs can, in some browsers, let a fast typist accumulate more
-  // than 4 digits in the year segment before the value settles — this rejects
+  // than 4 digits in the year segment before the value settles â€” this rejects
   // any change where the year portion isn't exactly 4 digits.
   const year = (value || "").split("-")[0];
   if (year && year.length !== 4) return previous;
   return value;
 }
-// Bank account numbers are always numeric — real ones run roughly 9–18 digits
+// Bank account numbers are always numeric â€” real ones run roughly 9â€“18 digits
 // depending on the bank, so this strips anything non-numeric and caps length
 // generously rather than enforcing one exact length like PAN/GSTIN do.
 function formatAccountNumber(raw) {
@@ -172,7 +171,7 @@ function formatAccountNumber(raw) {
 }
 
 const fmt = (n) =>
-  "₹" + (Number(n) || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  "â‚¹" + (Number(n) || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const monthKey = (d) => (d ? d.slice(0, 7) : "");
 const thisMonthKey = () => todayISO().slice(0, 7);
@@ -237,7 +236,7 @@ function PartyPicker({ label, value, onChange, records, onPick, placeholder }) {
           }
         }}
       >
-        <option value="">— select from Client Registration —</option>
+        <option value="">â€” select from Client Registration â€”</option>
         {records.map((r) => (
           <option key={r.id} value={r.name}>{r.name}</option>
         ))}
@@ -246,14 +245,14 @@ function PartyPicker({ label, value, onChange, records, onPick, placeholder }) {
       {custom && (
         <input
           className={`${inputCls} mt-1.5`}
-          placeholder={placeholder || "Type name…"}
+          placeholder={placeholder || "Type nameâ€¦"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
         />
       )}
       {records.length === 0 && (
         <span className="text-[11px] text-neutral-400 mt-0.5">
-          No one registered yet — add them in Client / Vendor Registration first, or type a name manually above.
+          No one registered yet â€” add them in Client / Vendor Registration first, or type a name manually above.
         </span>
       )}
     </Field>
@@ -372,7 +371,7 @@ function Pill({ children, tone }) {
   );
 }
 
-// Reusable attachment uploader — stores each record's files under their own
+// Reusable attachment uploader â€” stores each record's files under their own
 // storage key (nova-doc-<recordId>) so attachments never bloat the parent list.
 const MAX_ATTACHMENT_BYTES = 1.5 * 1024 * 1024;
 
@@ -403,14 +402,14 @@ function AttachmentsField({ recordId, label = "Attachments" }) {
     const picked = Array.from(e.target.files || []);
     for (const file of picked) {
       if (file.size > MAX_ATTACHMENT_BYTES) {
-        setError(`"${file.name}" is over 1.5 MB — try a smaller photo or a compressed PDF.`);
+        setError(`"${file.name}" is over 1.5 MB â€” try a smaller photo or a compressed PDF.`);
         continue;
       }
       try {
         const dataUrl = await fileToDataUrl(file);
         setFiles((prev) => [...prev, { id: uid(), name: file.name, size: file.size, dataUrl }]);
       } catch {
-        setError(`Couldn't read "${file.name}" — try again.`);
+        setError(`Couldn't read "${file.name}" â€” try again.`);
       }
     }
     e.target.value = "";
@@ -429,9 +428,9 @@ function AttachmentsField({ recordId, label = "Attachments" }) {
       </div>
       {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
       {!loaded ? (
-        <p className="text-xs text-neutral-400">Loading attachments…</p>
+        <p className="text-xs text-neutral-400">Loading attachmentsâ€¦</p>
       ) : files.length === 0 ? (
-        <p className="text-xs text-neutral-400">No files attached yet — bills, POs, or invoices you attach here stay linked to this record.</p>
+        <p className="text-xs text-neutral-400">No files attached yet â€” bills, POs, or invoices you attach here stay linked to this record.</p>
       ) : (
         <div className="space-y-1">
           {files.map((f) => (
@@ -451,7 +450,7 @@ function AttachmentsField({ recordId, label = "Attachments" }) {
 }
 
 // Admin-only panel: manage who can log in to what. Only creates/edits rows in
-// user_permissions — it can't create the underlying Supabase Auth user itself
+// user_permissions â€” it can't create the underlying Supabase Auth user itself
 // (that needs the Supabase dashboard, since the anon key has no admin rights).
 function AccessControlTab({ currentEmail }) {
   const [rows, setRows] = useState([]);
@@ -525,7 +524,7 @@ function AccessControlTab({ currentEmail }) {
       <div>
         <h2 className="font-bold text-lg text-neutral-900">Access Control</h2>
         <p className="text-xs text-neutral-400 mt-0.5">
-          Who can log in and which tabs they can see. Admins always see everything. To create the login itself, add the person in Supabase → Authentication → Users first — this panel only sets what they can access once they sign in.
+          Who can log in and which tabs they can see. Admins always see everything. To create the login itself, add the person in Supabase â†’ Authentication â†’ Users first â€” this panel only sets what they can access once they sign in.
         </p>
       </div>
 
@@ -599,7 +598,7 @@ function AccessControlTab({ currentEmail }) {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={4} className="px-4 py-6 text-center text-neutral-400 text-sm">Loading…</td></tr>
+              <tr><td colSpan={4} className="px-4 py-6 text-center text-neutral-400 text-sm">Loadingâ€¦</td></tr>
             )}
             {!loading && rows.length === 0 && (
               <tr><td colSpan={4} className="px-4 py-6 text-center text-neutral-400 text-sm">No users added yet.</td></tr>
@@ -607,7 +606,7 @@ function AccessControlTab({ currentEmail }) {
             {rows.map((row) => (
               <tr key={row.id} className="border-t border-neutral-100 align-top">
                 <td className="px-4 py-3">
-                  <div className="font-semibold text-neutral-800">{row.display_name || "—"}</div>
+                  <div className="font-semibold text-neutral-800">{row.display_name || "â€”"}</div>
                   <div className="text-xs text-neutral-400">{row.email}</div>
                 </td>
                 <td className="px-4 py-3">
@@ -659,7 +658,7 @@ function AccessControlTab({ currentEmail }) {
 }
 
 // Every real dashboard tab (excludes "access", which is admin-only and injected
-// separately) — shared between the sidebar nav and the Access Control panel so
+// separately) â€” shared between the sidebar nav and the Access Control panel so
 // the two never drift out of sync.
 const ALL_TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -705,7 +704,6 @@ export default function NovaOps() {
   const [legalDocCategories, setLegalDocCategories] = useState([]);
   const [materialRequests, setMaterialRequests] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
-  const [whatsappRecipients, setWhatsappRecipients] = useState([]);
   const [company, setCompany] = useState({ name: "NOVA", address: "", gstin: "" });
   const [printContent, setPrintContent] = useState(null);
   const [printTitle, setPrintTitle] = useState("nova-document");
@@ -751,7 +749,7 @@ export default function NovaOps() {
 
   useEffect(() => {
     (async () => {
-      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc, mr, po, wr] = await Promise.all([
+      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc, mr, po] = await Promise.all([
         loadList(KEYS.inventory),
         loadList(KEYS.attendance),
         loadList(KEYS.employees),
@@ -768,7 +766,6 @@ export default function NovaOps() {
         loadList(KEYS.legalDocCategories),
         loadList(KEYS.materialRequests),
         loadList(KEYS.purchaseOrders),
-        loadList(KEYS.whatsappRecipients),
       ]);
       setInventory(inv);
       setAttendance(att);
@@ -786,7 +783,6 @@ export default function NovaOps() {
       setLegalDocCategories(ldc);
       setMaterialRequests(mr);
       setPurchaseOrders(po);
-      setWhatsappRecipients(wr);
       setLoading(false);
     })();
   }, []);
@@ -838,9 +834,6 @@ export default function NovaOps() {
     if (!loading) saveList(KEYS.purchaseOrders, purchaseOrders);
   }, [purchaseOrders, loading]);
   useEffect(() => {
-    if (!loading) saveList(KEYS.whatsappRecipients, whatsappRecipients);
-  }, [whatsappRecipients, loading]);
-  useEffect(() => {
     if (!loading) saveObj(KEYS.company, company);
   }, [company, loading]);
 
@@ -864,7 +857,7 @@ export default function NovaOps() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96 text-neutral-400 gap-2">
-        <Loader2 className="animate-spin" size={18} /> Loading dashboard…
+        <Loader2 className="animate-spin" size={18} /> Loading dashboardâ€¦
       </div>
     );
   }
@@ -990,8 +983,6 @@ export default function NovaOps() {
             setRecords={setAttendance}
             employees={employees}
             company={company}
-            whatsappRecipients={whatsappRecipients}
-            setWhatsappRecipients={setWhatsappRecipients}
             setPrintContent={setPrintContent}
             setPrintTitle={setPrintTitle}
           />
@@ -1221,9 +1212,9 @@ function Overview({ inventory, attendance, employees, finance, orders, payments 
           <ul className="text-sm text-neutral-700 space-y-1">
             {dueSoonInvoices.slice(0, 6).map((p) => (
               <li key={p.id} className="flex justify-between">
-                <span>{p.party}{p.orderRef ? ` — ${p.orderRef}` : ""} {p.liveStatus === "Partially Paid" && <span className="text-blue-600">(partial)</span>}</span>
+                <span>{p.party}{p.orderRef ? ` â€” ${p.orderRef}` : ""} {p.liveStatus === "Partially Paid" && <span className="text-blue-600">(partial)</span>}</span>
                 <span className={p.daysLeft < 0 ? "text-red-600 font-semibold" : "text-neutral-400"}>
-                  {p.daysLeft < 0 ? `Overdue by ${Math.abs(p.daysLeft)}d` : p.daysLeft === 0 ? "Due today" : `Due in ${p.daysLeft}d`} · {fmt(p.balance)} due
+                  {p.daysLeft < 0 ? `Overdue by ${Math.abs(p.daysLeft)}d` : p.daysLeft === 0 ? "Due today" : `Due in ${p.daysLeft}d`} Â· {fmt(p.balance)} due
                 </span>
               </li>
             ))}
@@ -1255,10 +1246,100 @@ function Overview({ inventory, attendance, employees, finance, orders, payments 
 // ---------- INVENTORY ----------
 const BLANK_ITEM = { name: "", sku: "", category: "", quantity: "", unit: "pcs", reorderLevel: "", unitCost: "" };
 
+// ---- Inventory Excel import ----
+// Recognised header names per portal field (normalised: lowercased, letters/
+// digits only â€” so "Unit Cost", "unit_cost", "Unit-Cost (â‚¹)" all match). Any
+// spreadsheet column that isn't in one of these lists (e.g. a serial-number
+// "S.No" column) is simply never read â€” it doesn't need to be excluded, it's
+// never mapped to a portal field in the first place.
+const INVENTORY_IMPORT_ALIASES = {
+  name: ["name", "itemname", "productname", "item", "product", "materialname", "material", "description"],
+  sku: ["sku", "skucode", "itemcode", "code", "productcode", "partno", "partnumber"],
+  category: ["category", "cat", "type"],
+  quantity: ["quantity", "qty", "stock", "instock", "currentstock", "openingstock", "closingstock"],
+  unit: ["unit", "uom", "units", "measure"],
+  reorderLevel: ["reorderlevel", "reorderqty", "reorderpoint", "reorder", "minstock", "minimumstock", "minqty"],
+  unitCost: ["unitcost", "cost", "price", "rate", "unitprice", "costperunit", "rateperunit"],
+};
+const INVENTORY_TEMPLATE_COLUMNS = [
+  { label: "Item Name", key: "name" },
+  { label: "SKU", key: "sku" },
+  { label: "Category", key: "category" },
+  { label: "Quantity", key: "quantity" },
+  { label: "Unit", key: "unit" },
+  { label: "Reorder Level", key: "reorderLevel" },
+  { label: "Unit Cost", key: "unitCost" },
+];
+const normalizeHeader = (h) => String(h ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+function excelCellToNumber(v) {
+  if (v === "" || v === null || v === undefined) return 0;
+  const n = Number(String(v).replace(/,/g, "").replace(/[^0-9.\-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Downloads a blank .xlsx with exactly the column headers the importer
+// recognises, so a purchase manager filling it in gets the format right the
+// first time instead of guessing at column names.
+function downloadInventoryTemplate() {
+  exportExcel([], INVENTORY_TEMPLATE_COLUMNS.map((c) => ({ label: c.label, value: () => "" })), "Nova-Inventory-Import-Template", "Inventory");
+}
+
+// Reads an uploaded workbook (.xlsx/.xls/.csv) and maps it onto the portal's
+// inventory fields. Any column the portal doesn't recognise (e.g. "S.No") is
+// dropped automatically since it's never looked up. Rows missing the one
+// required portal field â€” Item Name â€” are omitted from the import rather than
+// creating a blank/broken row. Existing items are matched and updated by SKU
+// (when the row has one); everything else is added as a new item.
+async function parseInventoryExcelFile(file, existingItems) {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+  const getField = (normRow, field) => {
+    for (const alias of INVENTORY_IMPORT_ALIASES[field]) {
+      if (normRow[alias] !== undefined && String(normRow[alias]).trim() !== "") return normRow[alias];
+    }
+    return "";
+  };
+
+  const nextItems = [...existingItems];
+  let added = 0, updated = 0, skipped = 0;
+
+  rows.forEach((row) => {
+    const normRow = {};
+    Object.entries(row).forEach(([k, v]) => { normRow[normalizeHeader(k)] = v; });
+
+    const name = String(getField(normRow, "name")).trim();
+    if (!name) { skipped += 1; return; } // required portal field missing â€” omit this row
+
+    const sku = String(getField(normRow, "sku")).trim();
+    const category = String(getField(normRow, "category")).trim();
+    const unit = String(getField(normRow, "unit")).trim() || "pcs";
+    const quantity = String(excelCellToNumber(getField(normRow, "quantity")));
+    const reorderLevel = String(excelCellToNumber(getField(normRow, "reorderLevel")));
+    const unitCost = String(excelCellToNumber(getField(normRow, "unitCost")));
+
+    const existingIdx = sku
+      ? nextItems.findIndex((i) => (i.sku || "").trim().toLowerCase() === sku.toLowerCase())
+      : -1;
+
+    if (existingIdx >= 0) {
+      nextItems[existingIdx] = { ...nextItems[existingIdx], name, category, unit, quantity, reorderLevel, unitCost };
+      updated += 1;
+    } else {
+      nextItems.push({ id: uid(), name, sku, category, quantity, unit, reorderLevel, unitCost });
+      added += 1;
+    }
+  });
+
+  return { nextItems, added, updated, skipped, totalRows: rows.length };
+}
+
 // Assigns each category a consistent color (same category always gets the
 // same one), purely so the product catalogue table has some visual variety
-// per row — mirrors the colored icon tiles in the reference design.
-// Units offered in the Material Request "Unit" dropdown — add more here
+// per row â€” mirrors the colored icon tiles in the reference design.
+// Units offered in the Material Request "Unit" dropdown â€” add more here
 // any time (e.g. "Sheets", "Rolls") as new material types come up.
 const UNIT_OPTIONS = ["Pcs", "Kg", "Litres", "Grams", "ML", "Meters", "Box", "Set"];
 
@@ -1295,6 +1376,24 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const [fulfillingRequestId, setFulfillingRequestId] = useState(null);
+  const [importResult, setImportResult] = useState(null); // { added, updated, skipped, totalRows } | { error }
+  const [importing, setImporting] = useState(false);
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // reset so re-selecting the same file re-triggers onChange
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const { nextItems, added, updated, skipped, totalRows } = await parseInventoryExcelFile(file, items);
+      setItems(nextItems);
+      setImportResult({ added, updated, skipped, totalRows });
+    } catch (err) {
+      setImportResult({ error: "Couldn't read that file. Use the Download Template button for the expected format, or make sure it's a valid .xlsx/.xls/.csv file." });
+    }
+    setImporting(false);
+  };
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -1324,7 +1423,7 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
     if (editingId) {
       setItems(items.map((i) => (i.id === editingId ? { ...i, ...form, id: editingId } : i)));
       // If this item was already sent to OpEx, keep that OpEx entry's cost/qty/name
-      // in sync — otherwise correcting quantity or unit cost here leaves the OpEx
+      // in sync â€” otherwise correcting quantity or unit cost here leaves the OpEx
       // entry frozen at the old, un-updated total.
       setEntries((prev) =>
         prev.map((e) =>
@@ -1448,6 +1547,17 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
             <Printer size={16} /> Download PDF
           </button>
           <button
+            onClick={downloadInventoryTemplate}
+            className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-full transition"
+          >
+            <Download size={16} /> Template
+          </button>
+          <label className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-full transition cursor-pointer">
+            {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+            {importing ? "Importingâ€¦" : "Import Excel"}
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={importing} onChange={handleImportFile} />
+          </label>
+          <button
             onClick={openAdd}
             className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold pl-3 pr-4 py-2 rounded-full transition"
           >
@@ -1455,6 +1565,30 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
           </button>
         </div>
       </div>
+
+      {importResult && (
+        importResult.error ? (
+          <div className="flex items-start justify-between gap-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <span>{importResult.error}</span>
+            </div>
+            <button onClick={() => setImportResult(null)} className="text-red-300 hover:text-red-600 shrink-0"><X size={14} /></button>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+              <span>
+                Import complete â€” {importResult.added} item{importResult.added === 1 ? "" : "s"} added, {importResult.updated} updated (matched by SKU)
+                {importResult.skipped > 0 && `, ${importResult.skipped} row${importResult.skipped === 1 ? "" : "s"} skipped (no item name)`}
+                {" "}out of {importResult.totalRows} row{importResult.totalRows === 1 ? "" : "s"} in the file.
+              </span>
+            </div>
+            <button onClick={() => setImportResult(null)} className="text-emerald-300 hover:text-emerald-600 shrink-0"><X size={14} /></button>
+          </div>
+        )
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         <Card label="Inventory Value" value={fmt(totalInventoryValue)} sub={`${items.length} SKUs tracked`} />
@@ -1476,9 +1610,9 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
               <div key={r.id} className="flex items-center justify-between bg-white border border-amber-100 rounded-lg px-3 py-2 text-sm">
                 <div>
                   <span className="font-semibold text-neutral-800">{r.itemName}</span>
-                  <span className="text-neutral-400"> · {r.qty}{r.unit ? ` ${r.unit}` : ""} needed</span>
-                  <span className="text-neutral-400"> · for {r.orderName}</span>
-                  {r.note && <span className="text-neutral-400"> · "{r.note}"</span>}
+                  <span className="text-neutral-400"> Â· {r.qty}{r.unit ? ` ${r.unit}` : ""} needed</span>
+                  <span className="text-neutral-400"> Â· for {r.orderName}</span>
+                  {r.note && <span className="text-neutral-400"> Â· "{r.note}"</span>}
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <button onClick={() => fulfillRequest(r)} className="text-xs font-semibold text-red-600 hover:text-red-700">
@@ -1495,7 +1629,7 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
       )}
 
       <p className="text-xs text-neutral-400">
-        Tick "Send to OpEx" on any item to log it as an operating expense — its cost stays linked, so quantity or unit-cost corrections here update the OpEx entry too.
+        Tick "Send to OpEx" on any item to log it as an operating expense â€” its cost stays linked, so quantity or unit-cost corrections here update the OpEx entry too.
       </p>
 
       <div className="flex flex-wrap gap-2">
@@ -1503,7 +1637,7 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
           <input
             className={`${inputCls} rounded-full pl-9 w-full`}
-            placeholder="Search product name or SKU…"
+            placeholder="Search product name or SKUâ€¦"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -1558,11 +1692,11 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
                       </div>
                       <div>
                         <div className="font-semibold text-neutral-800">{item.name}</div>
-                        <div className="text-xs text-neutral-400">{item.category || "—"}</div>
+                        <div className="text-xs text-neutral-400">{item.category || "â€”"}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-neutral-500 font-mono whitespace-nowrap">{item.sku || "—"}</td>
+                  <td className="px-4 py-3 text-xs text-neutral-500 font-mono whitespace-nowrap">{item.sku || "â€”"}</td>
                   <td className="px-4 py-3 text-right text-neutral-700 whitespace-nowrap">{fmt(item.unitCost)}</td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <span className={status.filterValue !== "in" ? "text-red-600 font-semibold" : "text-neutral-800 font-semibold"}>
@@ -1598,7 +1732,7 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
                         Delete
                       </button>
                       {alreadySentToOpex ? (
-                        <span className="text-[11px] text-emerald-600 font-semibold">✓ OpEx</span>
+                        <span className="text-[11px] text-emerald-600 font-semibold">âœ“ OpEx</span>
                       ) : (
                         <button onClick={() => sendToOpex(item)} className="text-[11px] font-semibold text-neutral-400 hover:text-red-600">
                           + OpEx
@@ -1615,7 +1749,7 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
 
       {open && (
         <Modal
-          title={editingId ? "Edit inventory item" : fulfillingRequestId ? "Add inventory item — fulfilling material request" : "Add inventory item"}
+          title={editingId ? "Edit inventory item" : fulfillingRequestId ? "Add inventory item â€” fulfilling material request" : "Add inventory item"}
           onClose={() => setOpen(false)}
         >
           <div className="grid grid-cols-2 gap-3">
@@ -1637,7 +1771,7 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
             <Field label="Reorder level">
               <input type="number" className={inputCls} value={form.reorderLevel} onChange={(e) => setForm({ ...form, reorderLevel: e.target.value })} />
             </Field>
-            <Field label="Unit cost (₹)">
+            <Field label="Unit cost (â‚¹)">
               <input type="number" className={inputCls} value={form.unitCost} onChange={(e) => setForm({ ...form, unitCost: e.target.value })} />
             </Field>
           </div>
@@ -1688,7 +1822,7 @@ function AssetsTab({ assets, setAssets, company, setPrintContent, setPrintTitle 
         (a) => a.id !== editingId && (a.assetId || "").trim().toLowerCase() === trimmedId.toLowerCase()
       );
       if (clash) {
-        setIdError(`Asset ID "${trimmedId}" is already assigned to another asset — use a different one.`);
+        setIdError(`Asset ID "${trimmedId}" is already assigned to another asset â€” use a different one.`);
         return;
       }
     }
@@ -1769,7 +1903,7 @@ function AssetsTab({ assets, setAssets, company, setPrintContent, setPrintTitle 
               return r.expiryDate ? (
                 <span>{r.expiryDate} {info && <Pill tone={info.tone}>{info.text}</Pill>}</span>
               ) : (
-                <span className="text-neutral-300">—</span>
+                <span className="text-neutral-300">â€”</span>
               );
             },
           },
@@ -1807,7 +1941,7 @@ function AssetsTab({ assets, setAssets, company, setPrintContent, setPrintTitle 
               />
               {idError && <span className="text-xs text-red-600">{idError}</span>}
             </Field>
-            <Field label="Asset Value (₹)">
+            <Field label="Asset Value (â‚¹)">
               <input type="number" className={inputCls} value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
             </Field>
             <Field label="Purchase Date">
@@ -1830,7 +1964,7 @@ function AssetsTab({ assets, setAssets, company, setPrintContent, setPrintTitle 
 // ---------- ATTENDANCE ----------
 // Two separate permission slot systems, both shown in the same dropdown (grouped):
 // 9 one-hour slots covering the full work day, and 18 half-hour slots covering the
-// same day at finer granularity. Shown only in the dropdown below — not spelled
+// same day at finer granularity. Shown only in the dropdown below â€” not spelled
 // out in the HR policy text.
 const PERMISSION_SLOTS_HOURLY = [
   "09:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "11:00 AM - 12:00 PM", "12:00 PM - 01:00 PM",
@@ -1905,7 +2039,7 @@ function formatLeaveCount(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function AttendanceTab({ records, setRecords, employees, company, whatsappRecipients, setWhatsappRecipients, setPrintContent, setPrintTitle }) {
+function AttendanceTab({ records, setRecords, employees, company, setPrintContent, setPrintTitle }) {
   const [date, setDate] = useState(todayISO());
   const [draft, setDraft] = useState({});
   const [draftSlot, setDraftSlot] = useState({});
@@ -1973,7 +2107,7 @@ function AttendanceTab({ records, setRecords, employees, company, whatsappRecipi
     const halfCL = yearRows.filter((r) => r.status === "Half CL").length;
     return {
       name: e.name,
-      cl: fullCL + halfCL * 0.5, // 2 × Half CL counts as 1 CL against the 12/year quota
+      cl: fullCL + halfCL * 0.5, // 2 Ã— Half CL counts as 1 CL against the 12/year quota
       halfCL,
       ml: yearRows.filter((r) => r.status === "ML").length,
       permission: monthRows.filter((r) => r.hasPermission).length,
@@ -2009,51 +2143,6 @@ function AttendanceTab({ records, setRecords, employees, company, whatsappRecipi
 
   const isFutureDate = date > todayISO();
 
-  // ---- WhatsApp: plain-text daily summary, one-click via wa.me ----
-  const [newRecipientName, setNewRecipientName] = useState("");
-  const [newRecipientPhone, setNewRecipientPhone] = useState("");
-
-  const todaysRecords = records.filter((r) => r.date === date);
-  const waCounts = {
-    present: todaysRecords.filter((r) => r.status === "Present").length,
-    halfDay: todaysRecords.filter((r) => r.status === "Half-day").length,
-    cl: todaysRecords.filter((r) => r.status === "CL" || r.status === "Half CL").length,
-    ml: todaysRecords.filter((r) => r.status === "ML").length,
-    permission: todaysRecords.filter((r) => r.hasPermission).length,
-  };
-  const markedNames = new Set(todaysRecords.map((r) => r.employeeName));
-  const notMarked = employees.filter((e) => !markedNames.has(e.name)).length;
-
-  const buildWhatsAppMessage = () => {
-    const lines = [
-      `*${company.name} — Daily Attendance*`,
-      `Date: ${date}`,
-      "",
-      `Present: ${waCounts.present}`,
-      `Half-day: ${waCounts.halfDay}`,
-      `CL: ${waCounts.cl}`,
-      `ML: ${waCounts.ml}`,
-      `Permission: ${waCounts.permission}`,
-    ];
-    if (notMarked > 0) lines.push(`Not marked yet: ${notMarked}`);
-    lines.push("", "— Sent from Nova Attendance");
-    return lines.join("\n");
-  };
-
-  const addRecipient = () => {
-    const phone = formatPhone10(newRecipientPhone);
-    if (!newRecipientName.trim() || phone.length !== 10) return;
-    setWhatsappRecipients([...whatsappRecipients, { id: uid(), name: newRecipientName.trim(), phone }]);
-    setNewRecipientName("");
-    setNewRecipientPhone("");
-  };
-  const removeRecipient = (id) => setWhatsappRecipients(whatsappRecipients.filter((r) => r.id !== id));
-
-  const sendToRecipient = (phone) => {
-    const url = `https://wa.me/91${phone}?text=${encodeURIComponent(buildWhatsAppMessage())}`;
-    window.open(url, "_blank");
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-3">
@@ -2073,64 +2162,13 @@ function AttendanceTab({ records, setRecords, employees, company, whatsappRecipi
       {isFutureDate && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2 text-xs text-red-700 flex items-center gap-2">
           <AlertTriangle size={14} className="shrink-0" />
-          <span><strong>{date}</strong> is a future date. Attendance can only be recorded for today or an earlier date — this entry will not be saved.</span>
+          <span><strong>{date}</strong> is a future date. Attendance can only be recorded for today or an earlier date â€” this entry will not be saved.</span>
         </div>
       )}
 
-      <div className="bg-white border border-neutral-200 rounded-xl p-4">
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-          <div className="text-sm font-semibold text-neutral-800">Send today's summary via WhatsApp</div>
-          <span className="text-xs text-neutral-400">Present {waCounts.present} · CL {waCounts.cl} · ML {waCounts.ml} · Permission {waCounts.permission}</span>
-        </div>
-        {whatsappRecipients.length === 0 ? (
-          <p className="text-xs text-neutral-400 mb-2">No recipients added yet — add the Director/MD's WhatsApp number below.</p>
-        ) : (
-          <div className="flex flex-wrap gap-2 mb-3">
-            {whatsappRecipients.map((r) => (
-              <div key={r.id} className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full pl-3 pr-1.5 py-1">
-                <button
-                  onClick={() => sendToRecipient(r.phone)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800"
-                >
-                  <MessageCircle size={13} /> {r.name}
-                </button>
-                <button
-                  onClick={() => {
-                    if (window.confirm(`Remove ${r.name} from WhatsApp recipients?`)) removeRecipient(r.id);
-                  }}
-                  className="text-emerald-400 hover:text-red-600 ml-1"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="flex items-center gap-2 flex-wrap">
-          <input
-            className={`${inputCls} w-36`}
-            placeholder="Name (e.g. Director)"
-            value={newRecipientName}
-            onChange={(e) => setNewRecipientName(e.target.value)}
-          />
-          <input
-            className={`${inputCls} w-40`}
-            placeholder="10-digit WhatsApp no."
-            value={newRecipientPhone}
-            onChange={(e) => setNewRecipientPhone(formatPhone10(e.target.value))}
-          />
-          <button
-            onClick={addRecipient}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700"
-          >
-            <Plus size={13} /> Add recipient
-          </button>
-        </div>
-      </div>
-
       {isSunday(date) && (
         <div className="bg-neutral-100 border border-neutral-200 rounded-xl px-4 py-2 text-xs text-neutral-600">
-          <strong>Sunday — Weekly Holiday (H).</strong> Marked automatically in history/reports — no action needed unless someone actually worked, in which case mark them below.
+          <strong>Sunday â€” Weekly Holiday (H).</strong> Marked automatically in history/reports â€” no action needed unless someone actually worked, in which case mark them below.
         </div>
       )}
 
@@ -2145,7 +2183,7 @@ function AttendanceTab({ records, setRecords, employees, company, whatsappRecipi
               <div>
                 <div className="font-medium text-neutral-800 text-sm">{e.name}</div>
                 <div className="text-xs text-neutral-400">
-                  {e.role}{e.department ? ` · ${e.department}` : ""}{e.employeeId ? ` · ID: ${e.employeeId}` : ""}
+                  {e.role}{e.department ? ` Â· ${e.department}` : ""}{e.employeeId ? ` Â· ID: ${e.employeeId}` : ""}
                 </div>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -2176,7 +2214,7 @@ function AttendanceTab({ records, setRecords, employees, company, whatsappRecipi
                       ? "bg-amber-400 text-white border-amber-400"
                       : "text-neutral-500 border-neutral-200 hover:bg-neutral-50"
                   }`}
-                  title="Permission is independent of the day's main status — both can be active together"
+                  title="Permission is independent of the day's main status â€” both can be active together"
                 >
                   Permission
                 </button>
@@ -2197,13 +2235,13 @@ function AttendanceTab({ records, setRecords, employees, company, whatsappRecipi
 
       <div className="bg-white border border-neutral-200 rounded-xl p-4">
         <div className="text-sm font-semibold text-neutral-800 mb-2">
-          Leave usage — CL/ML for {usageYear}, Permission for {usageMonth}
+          Leave usage â€” CL/ML for {usageYear}, Permission for {usageMonth}
         </div>
         <ul className="text-xs text-neutral-400 mb-3 space-y-0.5 list-disc pl-4">
-          <li>12 Casual Leave (CL) per year — no carryover to next year.</li>
-          <li>2 × Half CL = 1 CL, counted against the same 12/year quota.</li>
-          <li>12 Medical Leave (ML) per year — no carryover to next year.</li>
-          <li>4 Permissions per month — no carryover to next month.</li>
+          <li>12 Casual Leave (CL) per year â€” no carryover to next year.</li>
+          <li>2 Ã— Half CL = 1 CL, counted against the same 12/year quota.</li>
+          <li>12 Medical Leave (ML) per year â€” no carryover to next year.</li>
+          <li>4 Permissions per month â€” no carryover to next month.</li>
           <li>Sundays count as a weekly holiday (H) automatically.</li>
         </ul>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -2346,7 +2384,7 @@ function EmployeesTab({ employees, setEmployees, company, setPrintContent, setPr
         (e) => e.id !== editingId && e.employeeId.trim().toLowerCase() === trimmedId.toLowerCase()
       );
       if (clash) {
-        setIdError(`Employee ID "${trimmedId}" is already assigned to another employee — use a different one.`);
+        setIdError(`Employee ID "${trimmedId}" is already assigned to another employee â€” use a different one.`);
         return;
       }
     }
@@ -2374,7 +2412,7 @@ function EmployeesTab({ employees, setEmployees, company, setPrintContent, setPr
         <div>
           <h2 className="font-bold text-lg text-neutral-900">Employees & Salary</h2>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Monthly payroll: {fmt(totalSalary)} · PF: {fmt(totalPF)} · ESI: {fmt(totalESI)}
+            Monthly payroll: {fmt(totalSalary)} Â· PF: {fmt(totalPF)} Â· ESI: {fmt(totalESI)}
           </p>
         </div>
         <div className="flex gap-2">
@@ -2453,7 +2491,7 @@ function EmployeesTab({ employees, setEmployees, company, setPrintContent, setPr
                 onChange={(e) => setForm({ ...form, joiningDate: sanitizeDateInput(e.target.value, form.joiningDate) })}
               />
             </Field>
-            <Field label="Monthly salary (₹)">
+            <Field label="Monthly salary (â‚¹)">
               <input
                 type="text"
                 inputMode="numeric"
@@ -2485,13 +2523,13 @@ function EmployeesTab({ employees, setEmployees, company, setPrintContent, setPr
             <Field label="PF number (UAN)">
               <input className={inputCls} value={form.pfNumber} onChange={(e) => setForm({ ...form, pfNumber: e.target.value })} />
             </Field>
-            <Field label="PF contribution (₹/month)">
+            <Field label="PF contribution (â‚¹/month)">
               <input type="number" className={inputCls} value={form.pfContribution} onChange={(e) => setForm({ ...form, pfContribution: e.target.value })} />
             </Field>
             <Field label="ESI number">
               <input className={inputCls} value={form.esiNumber} onChange={(e) => setForm({ ...form, esiNumber: e.target.value })} />
             </Field>
-            <Field label="ESI contribution (₹/month)">
+            <Field label="ESI contribution (â‚¹/month)">
               <input type="number" className={inputCls} value={form.esiContribution} onChange={(e) => setForm({ ...form, esiContribution: e.target.value })} />
             </Field>
             <Field label="PAN number">
@@ -2504,7 +2542,7 @@ function EmployeesTab({ employees, setEmployees, company, setPrintContent, setPr
               />
               <span className="text-[11px] text-neutral-400">Format: 5 letters + 4 digits + 1 letter (e.g. ABCDE1234F).</span>
               {form.pan && form.pan.length < 10 && (
-                <span className="text-xs text-amber-600">PAN must be exactly 10 characters — {10 - form.pan.length} more needed.</span>
+                <span className="text-xs text-amber-600">PAN must be exactly 10 characters â€” {10 - form.pan.length} more needed.</span>
               )}
             </Field>
             <Field label="Aadhaar number">
@@ -2545,17 +2583,17 @@ function PartyRegistrationPrintLayout({ reg, company }) {
       <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "14px" }}>
         <tbody>
           <tr><td style={labelCell}>{reg.partyType} Name</td><td style={cell} colSpan={3}>{reg.name}</td></tr>
-          <tr><td style={labelCell}>Registered Office Address</td><td style={cell} colSpan={3}>{reg.address || "—"}</td></tr>
-          <tr><td style={labelCell}>GSTIN No.</td><td style={cell}>{reg.gstin || "—"}</td><td style={labelCell}>MSME Status</td><td style={cell}>{reg.msmeStatus}</td></tr>
+          <tr><td style={labelCell}>Registered Office Address</td><td style={cell} colSpan={3}>{reg.address || "â€”"}</td></tr>
+          <tr><td style={labelCell}>GSTIN No.</td><td style={cell}>{reg.gstin || "â€”"}</td><td style={labelCell}>MSME Status</td><td style={cell}>{reg.msmeStatus}</td></tr>
         </tbody>
       </table>
 
       <div style={{ fontSize: "13px", fontWeight: "bold", margin: "12px 0 6px" }}>Bank Details</div>
       <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "14px" }}>
         <tbody>
-          <tr><td style={labelCell}>Beneficiary Name</td><td style={cell} colSpan={3}>{reg.beneficiaryName || "—"}</td></tr>
-          <tr><td style={labelCell}>Bank Name</td><td style={cell}>{reg.bankName || "—"}</td><td style={labelCell}>Account Number</td><td style={cell}>{reg.accountNumber || "—"}</td></tr>
-          <tr><td style={labelCell}>IFSC Code</td><td style={cell} colSpan={3}>{reg.ifsc || "—"}</td></tr>
+          <tr><td style={labelCell}>Beneficiary Name</td><td style={cell} colSpan={3}>{reg.beneficiaryName || "â€”"}</td></tr>
+          <tr><td style={labelCell}>Bank Name</td><td style={cell}>{reg.bankName || "â€”"}</td><td style={labelCell}>Account Number</td><td style={cell}>{reg.accountNumber || "â€”"}</td></tr>
+          <tr><td style={labelCell}>IFSC Code</td><td style={cell} colSpan={3}>{reg.ifsc || "â€”"}</td></tr>
         </tbody>
       </table>
 
@@ -2572,16 +2610,16 @@ function PartyRegistrationPrintLayout({ reg, company }) {
         <tbody>
           <tr>
             <td style={cell}>Primary</td>
-            <td style={cell}>{reg.authority1Name || "—"}</td>
-            <td style={cell}>{reg.authority1Contact || "—"}</td>
-            <td style={cell}>{reg.authority1Email || "—"}</td>
+            <td style={cell}>{reg.authority1Name || "â€”"}</td>
+            <td style={cell}>{reg.authority1Contact || "â€”"}</td>
+            <td style={cell}>{reg.authority1Email || "â€”"}</td>
           </tr>
           {(reg.authority2Name || reg.authority2Contact || reg.authority2Email) && (
             <tr>
               <td style={cell}>Secondary</td>
-              <td style={cell}>{reg.authority2Name || "—"}</td>
-              <td style={cell}>{reg.authority2Contact || "—"}</td>
-              <td style={cell}>{reg.authority2Email || "—"}</td>
+              <td style={cell}>{reg.authority2Name || "â€”"}</td>
+              <td style={cell}>{reg.authority2Contact || "â€”"}</td>
+              <td style={cell}>{reg.authority2Email || "â€”"}</td>
             </tr>
           )}
         </tbody>
@@ -2690,7 +2728,7 @@ function AssetPrintLayout({ assets, company, totalValue, residualValue, netValue
         ASSET REGISTER
       </div>
       <div style={{ textAlign: "center", fontSize: "11px", color: "#555", marginBottom: "16px" }}>
-        Total Asset Value: {fmt(totalValue)} &nbsp;·&nbsp; Residual ({Math.round(residualRate * 100)}%): {fmt(residualValue)} &nbsp;·&nbsp; Net Value: {fmt(netValue)}
+        Total Asset Value: {fmt(totalValue)} &nbsp;Â·&nbsp; Residual ({Math.round(residualRate * 100)}%): {fmt(residualValue)} &nbsp;Â·&nbsp; Net Value: {fmt(netValue)}
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
@@ -2707,7 +2745,7 @@ function AssetPrintLayout({ assets, company, totalValue, residualValue, netValue
         <tbody>
           {assets.map((a, idx) => (
             <tr key={a.id || idx}>
-              <td style={cell}>{a.assetId || "—"}</td>
+              <td style={cell}>{a.assetId || "â€”"}</td>
               <td style={cell}>{a.name}</td>
               <td style={cell}>{a.category}</td>
               <td style={cell}>{a.purchaseDate}</td>
@@ -2740,7 +2778,7 @@ function EmployeeListPrintLayout({ employees, company }) {
       <table style={{ width: "100%", fontSize: "11px", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ background: "#f3f3f3" }}>
-            {["Emp ID", "Name", "Role", "Department", "Status", "Joined", "Salary (₹)", "PF No.", "ESI No.", "Contact"].map((h) => (
+            {["Emp ID", "Name", "Role", "Department", "Status", "Joined", "Salary (â‚¹)", "PF No.", "ESI No.", "Contact"].map((h) => (
               <th key={h} style={{ border: "1px solid #ddd", padding: "5px", textAlign: "left" }}>{h}</th>
             ))}
           </tr>
@@ -2825,7 +2863,7 @@ function MonthlyAttendanceGrid({ employees, records, monthStr }) {
   return (
     <div className="border border-neutral-200 rounded-xl bg-white overflow-hidden">
       <div className="px-3 py-2 text-xs text-neutral-400 border-b border-neutral-100">
-        P=Present · HD=Half-day · CL=Casual Leave · HCL=Half CL · ML=Medical Leave · PM=Permission · H=Sunday Holiday · -=No record
+        P=Present Â· HD=Half-day Â· CL=Casual Leave Â· HCL=Half CL Â· ML=Medical Leave Â· PM=Permission Â· H=Sunday Holiday Â· -=No record
       </div>
       <div className="overflow-x-auto">
         <table className="text-xs w-full">
@@ -2879,10 +2917,10 @@ function AttendanceGridPrintLayout({ employees, records, monthStr, company }) {
         <div style={{ fontSize: "11px", color: "#555" }}>{company.address}</div>
       </div>
       <div style={{ textAlign: "center", fontSize: "14px", fontWeight: "bold", letterSpacing: "1px", margin: "8px 0 4px" }}>
-        MONTHLY ATTENDANCE — {monthStr}
+        MONTHLY ATTENDANCE â€” {monthStr}
       </div>
       <div style={{ textAlign: "center", fontSize: "10px", color: "#555", marginBottom: "10px" }}>
-        P=Present · HD=Half-day · CL=Casual Leave · HCL=Half CL · ML=Medical Leave · PM=Permission · H=Sunday Holiday · -=No record
+        P=Present Â· HD=Half-day Â· CL=Casual Leave Â· HCL=Half CL Â· ML=Medical Leave Â· PM=Permission Â· H=Sunday Holiday Â· -=No record
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
@@ -2997,7 +3035,7 @@ function AttendancePrintLayout({ records, employees, company, periodLabel }) {
 }
 
 // ---------- FINANCE (CapEx / OpEx) ----------
-// Indian Financial Year (Apr–Mar) options for the CapEx year filter — fixed to
+// Indian Financial Year (Aprâ€“Mar) options for the CapEx year filter â€” fixed to
 // always start at FY2025-26 and run 25 years forward, regardless of what
 // today's date happens to be (so the range stays predictable over time).
 function generateFYOptions() {
@@ -3015,7 +3053,7 @@ function generateFYOptions() {
   return options;
 }
 
-// "2026-08-14" -> "2026-08" — used to group OpEx entries by calendar month
+// "2026-08-14" -> "2026-08" â€” used to group OpEx entries by calendar month
 // regardless of which exact day they fall on.
 function monthKeyFromDate(dateStr) {
   return dateStr ? dateStr.slice(0, 7) : "";
@@ -3030,8 +3068,8 @@ const MONTH_PICKER_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Au
 const MONTH_PICKER_START_YEAR = 2026;
 const MONTH_PICKER_END_YEAR = 2050;
 
-// Calendar-style month picker: pick a year, then click a month — instead of a
-// single flat dropdown listing all 300 months (25 years × 12) at once.
+// Calendar-style month picker: pick a year, then click a month â€” instead of a
+// single flat dropdown listing all 300 months (25 years Ã— 12) at once.
 function MonthRangePicker({ value, onChange }) {
   const [open, setOpen] = useState(false);
   const [pickerYear, setPickerYear] = useState(
@@ -3089,7 +3127,7 @@ function MonthRangePicker({ value, onChange }) {
               onClick={() => { onChange("all"); setOpen(false); }}
               className="mt-2 w-full text-xs font-semibold text-neutral-400 hover:text-red-600 py-1"
             >
-              Clear — show all months
+              Clear â€” show all months
             </button>
           </div>
         </>
@@ -3113,8 +3151,8 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
   const q = query.trim().toLowerCase();
   const searchedEntries = q ? filtered.filter((e) => (e.category || "").toLowerCase().includes(q)) : filtered;
 
-  // CapEx: sort/filter by Financial Year (Apr–Mar). OpEx: sort/filter by
-  // calendar month — via the MonthRangePicker below (2026–2050), not a flat list.
+  // CapEx: sort/filter by Financial Year (Aprâ€“Mar). OpEx: sort/filter by
+  // calendar month â€” via the MonthRangePicker below (2026â€“2050), not a flat list.
   const fyOptions = generateFYOptions();
   const fyRange = fyOptions.find((f) => f.value === fyFilter);
 
@@ -3138,7 +3176,7 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
     if (editingId) {
       setEntries(entries.map((e) => (e.id === editingId ? { ...e, ...payload, id: editingId } : e)));
       // If this CapEx row was already sent to Asset Management, keep that asset's
-      // value/name/date in sync — otherwise editing unit price or no. of units here
+      // value/name/date in sync â€” otherwise editing unit price or no. of units here
       // (e.g. correcting units from 1 to 2) leaves the Asset record frozen at the
       // old, un-updated total.
       if (isCapex) {
@@ -3182,8 +3220,8 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
 
   const total = viewEntries.reduce((s, e) => s + Number(e.amount), 0);
   const sub = isCapex
-    ? fyFilter === "all" ? "Machinery, equipment, land etc. · all years" : `Machinery, equipment, land etc. · ${fyRange?.label}`
-    : monthFilter === "all" ? "Rent, utilities, materials etc. · all months" : `Rent, utilities, materials etc. · ${formatMonthLabel(monthFilter)}`;
+    ? fyFilter === "all" ? "Machinery, equipment, land etc. Â· all years" : `Machinery, equipment, land etc. Â· ${fyRange?.label}`
+    : monthFilter === "all" ? "Rent, utilities, materials etc. Â· all months" : `Rent, utilities, materials etc. Â· ${formatMonthLabel(monthFilter)}`;
 
   return (
     <div className="space-y-4">
@@ -3204,7 +3242,7 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
               className={`${inputCls} pl-8 w-48`}
-              placeholder="Search category…"
+              placeholder="Search categoryâ€¦"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -3253,7 +3291,7 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
                   label: "Add to Assets",
                   render: (r) =>
                     r.sentToAssets ? (
-                      <span className="text-xs text-emerald-600 font-semibold whitespace-nowrap">✓ In Assets</span>
+                      <span className="text-xs text-emerald-600 font-semibold whitespace-nowrap">âœ“ In Assets</span>
                     ) : (
                       <input
                         type="checkbox"
@@ -3275,7 +3313,7 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
         rows={[...viewEntries].sort((a, b) => (a.date < b.date ? 1 : -1))}
         onDelete={(id) => {
           setEntries(entries.filter((e) => e.id !== id));
-          // Don't leave a linked Asset pointing at a deleted CapEx row — unlink it
+          // Don't leave a linked Asset pointing at a deleted CapEx row â€” unlink it
           // (keep the asset itself, just mark it Manual) instead of a dangling reference.
           if (isCapex) {
             setAssets((prev) =>
@@ -3296,7 +3334,7 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
             </Field>
             {isCapex ? (
               <>
-                <Field label="Unit Price (₹)">
+                <Field label="Unit Price (â‚¹)">
                   <input type="number" className={inputCls} value={form.unitPrice} onChange={(e) => setForm({ ...form, unitPrice: e.target.value })} />
                 </Field>
                 <Field label="No. of Units">
@@ -3307,7 +3345,7 @@ function FinanceTab({ entries, setEntries, type, assets, setAssets, company, set
                 </div>
               </>
             ) : (
-              <Field label="Amount (₹)">
+              <Field label="Amount (â‚¹)">
                 <input type="number" className={inputCls} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
               </Field>
             )}
@@ -3347,7 +3385,7 @@ function OrdersTab({ orders, setOrders, company, partyRegistrations, setPrintCon
       (o) => o.id !== editingId && (o.name || "").trim().toLowerCase() === trimmedName.toLowerCase()
     );
     if (clash) {
-      setIdError(`Order/Project ID "${trimmedName}" is already assigned to another project — use a different one.`);
+      setIdError(`Order/Project ID "${trimmedName}" is already assigned to another project â€” use a different one.`);
       return;
     }
     setIdError("");
@@ -3387,7 +3425,7 @@ function OrdersTab({ orders, setOrders, company, partyRegistrations, setPrintCon
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
               className={`${inputCls} pl-8 w-56`}
-              placeholder="Search project or client…"
+              placeholder="Search project or clientâ€¦"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -3446,7 +3484,7 @@ function OrdersTab({ orders, setOrders, company, partyRegistrations, setPrintCon
                 <option>Cancelled</option>
               </select>
             </Field>
-            <Field label="Order value (₹)">
+            <Field label="Order value (â‚¹)">
               <input type="number" className={inputCls} value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
             </Field>
             <Field label="Start date">
@@ -3469,9 +3507,9 @@ function OrdersTab({ orders, setOrders, company, partyRegistrations, setPrintCon
 // ---------- PROJECT TRACK SHEET ----------
 // Per-project cost sheet as its own tab: pulls the project itself from
 // Orders/Projects, lets you log product consumption straight from Inventory,
-// and worker hours straight from Employees & Salary — then computes Total
+// and worker hours straight from Employees & Salary â€” then computes Total
 // Project Cost, GST, and Net Profit live. GST is calculated on the project's
-// Gross Worth (its order value) at 18% total — split as 9% CGST + 9% SGST for
+// Gross Worth (its order value) at 18% total â€” split as 9% CGST + 9% SGST for
 // an intra-state client, or shown as a single 18% IGST line for inter-state.
 // Both modes total the same 18%; only the split shown differs.
 function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, employees, setPrintContent, setPrintTitle, company }) {
@@ -3501,7 +3539,7 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
       date: todayISO(),
     };
     updateOrder({ productAllocations: [...(selected.productAllocations || []), entry] });
-    // Deduct from Inventory stock so quantity on hand stays accurate — this is
+    // Deduct from Inventory stock so quantity on hand stays accurate â€” this is
     // the whole point of linking the two tabs together.
     setInventory((prev) =>
       prev.map((i) => (i.id === item.id ? { ...i, quantity: Number(i.quantity || 0) - qtyUsed } : i))
@@ -3543,7 +3581,7 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
       <div className="space-y-4">
         <h2 className="font-bold text-lg text-neutral-900">Project Track Sheet</h2>
         <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
-          <p className="text-sm text-neutral-500">No projects yet — add one in Orders / Projects first, then come back here to track its costs.</p>
+          <p className="text-sm text-neutral-500">No projects yet â€” add one in Orders / Projects first, then come back here to track its costs.</p>
         </div>
       </div>
     );
@@ -3577,7 +3615,7 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
         <div className="flex items-center gap-2">
           <select className={inputCls} value={selectedId || ""} onChange={(e) => setSelectedId(e.target.value)}>
             {orders.map((o) => (
-              <option key={o.id} value={o.id}>{o.name}{o.client ? ` · ${o.client}` : ""}</option>
+              <option key={o.id} value={o.id}>{o.name}{o.client ? ` Â· ${o.client}` : ""}</option>
             ))}
           </select>
           <button
@@ -3610,7 +3648,7 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
       </div>
 
       <p className="text-xs text-neutral-400 -mt-2">
-        {selected.client ? `Client: ${selected.client} · ` : ""}Log every product used from Inventory and every worker's hours from Employees & Salary below — cost, tax, and profit update live as you go.
+        {selected.client ? `Client: ${selected.client} Â· ` : ""}Log every product used from Inventory and every worker's hours from Employees & Salary below â€” cost, tax, and profit update live as you go.
       </p>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -3675,9 +3713,9 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
             value={prodForm.itemId}
             onChange={(e) => setProdForm({ ...prodForm, itemId: e.target.value })}
           >
-            <option value="">— select product from Inventory —</option>
+            <option value="">â€” select product from Inventory â€”</option>
             {inventory.map((i) => (
-              <option key={i.id} value={i.id}>{i.name} · {fmt(i.unitCost)}/{i.unit || "unit"} · {i.quantity} in stock</option>
+              <option key={i.id} value={i.id}>{i.name} Â· {fmt(i.unitCost)}/{i.unit || "unit"} Â· {i.quantity} in stock</option>
             ))}
           </select>
           <input
@@ -3690,7 +3728,7 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
           <div className="col-span-2 text-xs text-neutral-500 px-1">
             {prodForm.itemId && prodForm.qty
               ? fmt(Number(prodForm.qty || 0) * Number(inventory.find((i) => i.id === prodForm.itemId)?.unitCost || 0))
-              : "—"}
+              : "â€”"}
           </div>
           <button onClick={addProduct} className="col-span-1 text-red-600 hover:text-red-700 flex justify-center">
             <Plus size={16} />
@@ -3698,11 +3736,11 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
         </div>
         {prodForm.itemId && prodForm.qty && Number(prodForm.qty) > Number(inventory.find((i) => i.id === prodForm.itemId)?.quantity || 0) && (
           <p className="text-[11px] text-red-600 mt-1.5 font-semibold">
-            ⚠ Only {inventory.find((i) => i.id === prodForm.itemId)?.quantity || 0} {inventory.find((i) => i.id === prodForm.itemId)?.unit || "unit(s)"} in stock — adding this will take Inventory negative.
+            âš  Only {inventory.find((i) => i.id === prodForm.itemId)?.quantity || 0} {inventory.find((i) => i.id === prodForm.itemId)?.unit || "unit(s)"} in stock â€” adding this will take Inventory negative.
           </p>
         )}
         {inventory.length === 0 && (
-          <p className="text-[11px] text-neutral-400 mt-1.5">No inventory items yet — add some in the Inventory tab first.</p>
+          <p className="text-[11px] text-neutral-400 mt-1.5">No inventory items yet â€” add some in the Inventory tab first.</p>
         )}
       </div>
 
@@ -3748,7 +3786,7 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
                 {employeeEntries.map((e) => (
                   <tr key={e.id} className="border-t border-neutral-100">
                     <td className="px-3 py-1.5">{e.employeeName}</td>
-                    <td className="px-3 py-1.5 text-right">{e.hours || "—"}</td>
+                    <td className="px-3 py-1.5 text-right">{e.hours || "â€”"}</td>
                     <td className="px-3 py-1.5">
                       <Pill tone={e.shiftType === "OT" ? "amber" : "gray"}>{e.shiftType === "OT" ? "OT" : "GS"}</Pill>
                     </td>
@@ -3771,9 +3809,9 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
             value={empForm.employeeId}
             onChange={(e) => setEmpForm({ ...empForm, employeeId: e.target.value })}
           >
-            <option value="">— select employee —</option>
+            <option value="">â€” select employee â€”</option>
             {employees.map((e) => (
-              <option key={e.id} value={e.id}>{e.name}{e.role ? ` · ${e.role}` : ""}</option>
+              <option key={e.id} value={e.id}>{e.name}{e.role ? ` Â· ${e.role}` : ""}</option>
             ))}
           </select>
           <input
@@ -3794,7 +3832,7 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
           <input
             className={`${inputCls} col-span-2 px-2`}
             type="number"
-            placeholder="₹ Cost"
+            placeholder="â‚¹ Cost"
             value={empForm.cost}
             onChange={(e) => setEmpForm({ ...empForm, cost: e.target.value })}
           />
@@ -3809,9 +3847,9 @@ function ProjectTrackSheetTab({ orders, setOrders, inventory, setInventory, empl
           </button>
         </div>
         {employees.length === 0 && (
-          <p className="text-[11px] text-neutral-400 mt-1.5">No employees added yet — add some in Employees & Salary first.</p>
+          <p className="text-[11px] text-neutral-400 mt-1.5">No employees added yet â€” add some in Employees & Salary first.</p>
         )}
-        <p className="text-[11px] text-neutral-400 mt-1.5">Cost is entered manually per employee for this project — enter whatever portion of their pay applies here.</p>
+        <p className="text-[11px] text-neutral-400 mt-1.5">Cost is entered manually per employee for this project â€” enter whatever portion of their pay applies here.</p>
       </div>
 
     </div>
@@ -3823,7 +3861,7 @@ function ProjectTrackSheetPrintLayout({ order, productAllocations, employeeEntri
     <div style={{ fontFamily: "Arial, sans-serif", padding: 24 }}>
       <h1 style={{ fontSize: 20, marginBottom: 2 }}>{company?.name || "Company"}</h1>
       <p style={{ fontSize: 12, color: "#666", marginTop: 0 }}>{company?.address}</p>
-      <h2 style={{ fontSize: 16, marginTop: 20 }}>Project Track Sheet — {order.name}</h2>
+      <h2 style={{ fontSize: 16, marginTop: 20 }}>Project Track Sheet â€” {order.name}</h2>
       <p style={{ fontSize: 12, color: "#666" }}>{order.client ? `Client: ${order.client}` : ""}</p>
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginTop: 16 }}>
@@ -3879,7 +3917,7 @@ function ProjectTrackSheetPrintLayout({ order, productAllocations, employeeEntri
           {employeeEntries.map((e) => (
             <tr key={e.id} style={{ borderBottom: "1px solid #eee" }}>
               <td style={{ padding: 4 }}>{e.employeeName}</td>
-              <td style={{ padding: 4, textAlign: "right" }}>{e.hours || "—"}</td>
+              <td style={{ padding: 4, textAlign: "right" }}>{e.hours || "â€”"}</td>
               <td style={{ padding: 4 }}>{e.shiftType === "OT" ? "OT" : "GS"}</td>
               <td style={{ padding: 4, textAlign: "right" }}>{fmt(e.cost)}</td>
               <td style={{ padding: 4 }}>{e.date}</td>
@@ -3892,7 +3930,7 @@ function ProjectTrackSheetPrintLayout({ order, productAllocations, employeeEntri
 }
 
 // ---------- VENDOR & CLIENT PAYMENTS ----------
-// Indian financial year: April 1 – March 31
+// Indian financial year: April 1 â€“ March 31
 function currentFYRange() {
   const now = new Date();
   const y = now.getFullYear();
@@ -3920,7 +3958,7 @@ function paymentReceived(p) {
     .filter((i) => i.status === "Received")
     .reduce((s, i) => s + Number(i.amount || 0), 0);
 }
-// Live status for a client invoice, derived from its installments + closing date —
+// Live status for a client invoice, derived from its installments + closing date â€”
 // computed on every render (not stored) so it never goes stale, e.g. it flips to
 // "Overdue" automatically once the closing date passes, even with no edits.
 function clientPaymentStatus(p) {
@@ -3961,7 +3999,7 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
       const installments = [...(f.installments || [])];
       const inst = { ...installments[idx], [field]: value };
       const total = Number(f.amount || 0);
-      // Keep % and ₹ in sync with each other and with the invoice total, whichever
+      // Keep % and â‚¹ in sync with each other and with the invoice total, whichever
       // side the user is actually typing into.
       if (field === "percent" && total) {
         inst.amount = String(Math.round((Number(value || 0) / 100) * total));
@@ -3983,7 +4021,7 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
 
   // Client Payments: only show projects belonging to the client currently
   // selected (matches order.client). Vendor Payments has no such link in the
-  // data — a vendor bill can relate to any project — so show every project,
+  // data â€” a vendor bill can relate to any project â€” so show every project,
   // letting the person pick whichever one this bill is actually for.
   const relevantOrders = isClient
     ? orders.filter((o) => !form.party || (o.client || "").trim().toLowerCase() === form.party.trim().toLowerCase())
@@ -4043,7 +4081,7 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
               className={`${inputCls} pl-8 w-48`}
-              placeholder={`Search ${partyType.toLowerCase()} name…`}
+              placeholder={`Search ${partyType.toLowerCase()} nameâ€¦`}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -4072,16 +4110,16 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
         <Card label={fy.label} value={fmt(fyTotal)} sub={`Total ${partyType.toLowerCase()} this FY`} />
         <Card label="Overdue" value={fmt(fyOverdue)} tone={fyOverdue ? "danger" : "good"} sub={`${fyPayments.filter((p) => displayStatus(p) === "Overdue").length} record(s)`} />
         {isClient && (
-          <Card label="Partially Paid" value={fmt(fyPartial)} tone={fyPartial ? "default" : "good"} sub={`${fyPayments.filter((p) => displayStatus(p) === "Partially Paid").length} record(s) · balance due`} />
+          <Card label="Partially Paid" value={fmt(fyPartial)} tone={fyPartial ? "default" : "good"} sub={`${fyPayments.filter((p) => displayStatus(p) === "Partially Paid").length} record(s) Â· balance due`} />
         )}
         <Card label="Pending" value={fmt(fyPending)} sub={`${fyPayments.filter((p) => displayStatus(p) === "Pending").length} record(s)`} />
-        <Card label="Paid" value={fmt(fyPaid)} tone="good" sub={`${fyPayments.filter((p) => displayStatus(p) === "Paid").length} record(s)${isClient ? " · amount received" : ""}`} />
+        <Card label="Paid" value={fmt(fyPaid)} tone="good" sub={`${fyPayments.filter((p) => displayStatus(p) === "Paid").length} record(s)${isClient ? " Â· amount received" : ""}`} />
       </div>
       <Table
         emptyMsg={q ? `No ${partyType.toLowerCase()} records match "${query}".` : `No ${partyType.toLowerCase()} payment records yet.`}
         columns={[
           { key: "party", label: "Party" },
-          { key: "orderRef", label: "Project", render: (r) => r.orderRef || "—" },
+          { key: "orderRef", label: "Project", render: (r) => r.orderRef || "â€”" },
           { key: "type", label: "Payable / Receivable" },
           { key: "amount", label: "Invoice Amount", render: (r) => fmt(r.amount) },
           ...(isClient
@@ -4091,7 +4129,7 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
               ]
             : []),
           { key: "date", label: "Date" },
-          { key: "dueDate", label: "Invoice due", render: (r) => r.dueDate || "—" },
+          { key: "dueDate", label: "Invoice due", render: (r) => r.dueDate || "â€”" },
           { key: "status", label: "Status", render: (r) => <Pill tone={statusTone[displayStatus(r)]}>{displayStatus(r)}</Pill> },
           { key: "reference", label: "Reference" },
         ]}
@@ -4125,16 +4163,16 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
                   setForm((f) => ({
                     ...f,
                     orderRef: val,
-                    // Only auto-fill the amount for Client Payments — a project's
+                    // Only auto-fill the amount for Client Payments â€” a project's
                     // order value is what the client owes you, which has no
                     // bearing on what you separately owe a vendor for it.
                     amount: isClient && matched ? matched.value : f.amount,
                   }));
                 }}
               >
-                <option value="">— none / manual amount —</option>
+                <option value="">â€” none / manual amount â€”</option>
                 {relevantOrders.map((o) => (
-                  <option key={o.id} value={o.name}>{o.name} · {fmt(o.value)}</option>
+                  <option key={o.id} value={o.name}>{o.name} Â· {fmt(o.value)}</option>
                 ))}
               </select>
               {isClient && relevantOrders.length === 0 && (
@@ -4143,10 +4181,10 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
                 </span>
               )}
             </Field>
-            <Field label="Invoice Amount (₹)">
+            <Field label="Invoice Amount (â‚¹)">
               <input type="number" className={inputCls} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
               {isClient && form.orderRef && (
-                <span className="text-[11px] text-neutral-400">Auto-filled from {form.orderRef} — edit if the actual invoice differs.</span>
+                <span className="text-[11px] text-neutral-400">Auto-filled from {form.orderRef} â€” edit if the actual invoice differs.</span>
               )}
             </Field>
             <Field label="Date">
@@ -4185,7 +4223,7 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
                 </button>
               </div>
               <p className="text-xs text-neutral-400 mb-2">
-                Split this invoice however that client's terms work — e.g. 20% advance + 50% mid + 30% on delivery. Enter each tranche as a % or a fixed ₹ amount; the other side fills in automatically.
+                Split this invoice however that client's terms work â€” e.g. 20% advance + 50% mid + 30% on delivery. Enter each tranche as a % or a fixed â‚¹ amount; the other side fills in automatically.
               </p>
               <div className="space-y-2">
                 {formInstallments.map((inst, idx) => (
@@ -4200,7 +4238,7 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
                     <input
                       className={`${inputCls} col-span-3 px-2`}
                       type="number"
-                      placeholder="₹ amount"
+                      placeholder="â‚¹ amount"
                       value={inst.amount}
                       onChange={(e) => updateInstallment(idx, "amount", e.target.value)}
                     />
@@ -4231,7 +4269,7 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
                 ))}
                 {formInstallments.length === 0 && (
                   <div className="text-center text-[11px] text-neutral-400 py-3 border border-dashed border-neutral-200 rounded-lg">
-                    No installments added yet — this invoice will show as Pending until you add one.
+                    No installments added yet â€” this invoice will show as Pending until you add one.
                   </div>
                 )}
               </div>
@@ -4247,7 +4285,7 @@ function PaymentsTab({ payments, setPayments, partyType, partyRegistrations, ord
                 <div className="text-xs text-neutral-500 mt-1.5 flex items-center justify-between flex-wrap gap-1">
                   <span>Status: <strong className="text-neutral-800">{formLiveStatus}</strong></span>
                   {formOverAllocated && (
-                    <span className="text-red-600 font-semibold">⚠ Installments add up to more than the invoice amount</span>
+                    <span className="text-red-600 font-semibold">âš  Installments add up to more than the invoice amount</span>
                   )}
                 </div>
               </div>
@@ -4271,7 +4309,7 @@ function PaymentsPrintLayout({ rows, partyType, isClient, displayStatus, company
       <h1 style={{ fontSize: 20, marginBottom: 2 }}>{company?.name || "Company"}</h1>
       <p style={{ fontSize: 12, color: "#666", marginTop: 0 }}>{company?.address}</p>
       <h2 style={{ fontSize: 16, marginTop: 20 }}>{partyType} Payments Register</h2>
-      <p style={{ fontSize: 12, color: "#666" }}>Total: {fmt(total)} · {rows.length} record(s)</p>
+      <p style={{ fontSize: 12, color: "#666" }}>Total: {fmt(total)} Â· {rows.length} record(s)</p>
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, marginTop: 12 }}>
         <thead>
@@ -4291,14 +4329,14 @@ function PaymentsPrintLayout({ rows, partyType, isClient, displayStatus, company
           {rows.map((r) => (
             <tr key={r.id} style={{ borderBottom: "1px solid #eee" }}>
               <td style={{ padding: 4 }}>{r.party}</td>
-              <td style={{ padding: 4 }}>{r.orderRef || "—"}</td>
+              <td style={{ padding: 4 }}>{r.orderRef || "â€”"}</td>
               <td style={{ padding: 4, textAlign: "right" }}>{fmt(r.amount)}</td>
               {isClient && <td style={{ padding: 4, textAlign: "right" }}>{fmt(paymentReceived(r))}</td>}
               {isClient && <td style={{ padding: 4, textAlign: "right" }}>{fmt(Number(r.amount || 0) - paymentReceived(r))}</td>}
               <td style={{ padding: 4 }}>{r.date}</td>
-              <td style={{ padding: 4 }}>{r.dueDate || "—"}</td>
+              <td style={{ padding: 4 }}>{r.dueDate || "â€”"}</td>
               <td style={{ padding: 4 }}>{displayStatus(r)}</td>
-              <td style={{ padding: 4 }}>{r.reference || "—"}</td>
+              <td style={{ padding: 4 }}>{r.reference || "â€”"}</td>
             </tr>
           ))}
         </tbody>
@@ -4382,7 +4420,7 @@ function DeliveryDocsTab({ docs, setDocs, company, setCompany, orders, partyRegi
       <div>
         <h2 className="font-bold text-lg text-neutral-900">Delivery Documents</h2>
         <p className="text-xs text-neutral-400 mt-0.5">
-          Generate a delivery challan for goods leaving for a client site — print it or save as PDF.
+          Generate a delivery challan for goods leaving for a client site â€” print it or save as PDF.
         </p>
       </div>
 
@@ -4477,7 +4515,7 @@ function DeliveryDocsTab({ docs, setDocs, company, setCompany, orders, partyRegi
               </div>
               <Field label="Link to order/project (optional)">
                 <select className={inputCls} value={form.orderRef} onChange={(e) => setForm({ ...form, orderRef: e.target.value })}>
-                  <option value="">— none —</option>
+                  <option value="">â€” none â€”</option>
                   {orders.map((o) => (
                     <option key={o.id} value={o.name}>{o.name}</option>
                   ))}
@@ -4572,7 +4610,7 @@ function DeliveryDocsTab({ docs, setDocs, company, setCompany, orders, partyRegi
                     <input
                       type="number"
                       className={`${inputCls} col-span-2`}
-                      placeholder="Rate ₹"
+                      placeholder="Rate â‚¹"
                       value={it.rate}
                       onChange={(e) => updateItem(idx, "rate", e.target.value)}
                     />
@@ -4786,7 +4824,7 @@ function ChallanPrintLayout({ doc, company, copyLabel }) {
   );
 }
 
-// Renders three copies of the same challan — ORIGINAL, DUPLICATE, TRIPLICATE —
+// Renders three copies of the same challan â€” ORIGINAL, DUPLICATE, TRIPLICATE â€”
 // as one continuous printable document, each starting on its own page.
 function ChallanTripleCopyLayout({ doc, company }) {
   const labels = ["ORIGINAL", "DUPLICATE", "TRIPLICATE"];
@@ -4804,7 +4842,7 @@ function ChallanTripleCopyLayout({ doc, company }) {
 // ---------- PURCHASE ORDERS ----------
 const blankPOItem = () => ({ id: uid(), description: "", hsn: "", qty: "", unit: "pcs", rate: "" });
 
-// Generates the next Purchase Order ID — e.g. PO-0001, PO-0002... — always
+// Generates the next Purchase Order ID â€” e.g. PO-0001, PO-0002... â€” always
 // unique and continuous, based on whatever the highest number used so far is.
 // Still editable by hand in the form, with a live duplicate check either way.
 function nextPoNumber(purchaseOrders) {
@@ -4874,7 +4912,7 @@ function PurchaseOrderTab({ purchaseOrders, setPurchaseOrders, company, partyReg
   const igst = form.taxType === "IGST" ? taxAmount : 0;
   const grandTotal = subtotal + taxAmount;
 
-  // Live uniqueness check on the PO ID — catches manual edits that collide
+  // Live uniqueness check on the PO ID â€” catches manual edits that collide
   // with an existing one, not just the auto-generated default.
   useEffect(() => {
     if (!form.poNumber.trim()) {
@@ -4884,7 +4922,7 @@ function PurchaseOrderTab({ purchaseOrders, setPurchaseOrders, company, partyReg
     const dup = purchaseOrders.some(
       (p) => p.id !== editingId && p.poNumber.trim().toLowerCase() === form.poNumber.trim().toLowerCase()
     );
-    setPoNumberWarning(dup ? "This Purchase Order ID is already in use — it must be unique." : "");
+    setPoNumberWarning(dup ? "This Purchase Order ID is already in use â€” it must be unique." : "");
   }, [form.poNumber, purchaseOrders, editingId]);
 
   const save = () => {
@@ -4904,7 +4942,7 @@ function PurchaseOrderTab({ purchaseOrders, setPurchaseOrders, company, partyReg
     <div className="space-y-4">
       <div>
         <h2 className="font-bold text-lg text-neutral-900">Purchase Orders</h2>
-        <p className="text-xs text-neutral-400 mt-0.5">Raise a purchase order for a vendor — print it or save as PDF.</p>
+        <p className="text-xs text-neutral-400 mt-0.5">Raise a purchase order for a vendor â€” print it or save as PDF.</p>
       </div>
       <div className="flex justify-end">
         <AddButton onClick={openAdd} text="New purchase order" />
@@ -4950,7 +4988,7 @@ function PurchaseOrderTab({ purchaseOrders, setPurchaseOrders, company, partyReg
               {poNumberWarning ? (
                 <span className="text-xs text-red-600">{poNumberWarning}</span>
               ) : (
-                <span className="text-[11px] text-neutral-400">Auto-generated, unique, and continuous — edit only if you need a custom format.</span>
+                <span className="text-[11px] text-neutral-400">Auto-generated, unique, and continuous â€” edit only if you need a custom format.</span>
               )}
             </Field>
             <Field label="Date">
@@ -5046,7 +5084,7 @@ function PurchaseOrderTab({ purchaseOrders, setPurchaseOrders, company, partyReg
                   <input
                     type="number"
                     className={`${inputCls} col-span-2`}
-                    placeholder="Rate ₹"
+                    placeholder="Rate â‚¹"
                     value={it.rate}
                     onChange={(e) => updateItem(idx, "rate", e.target.value)}
                   />
@@ -5137,7 +5175,7 @@ function PurchaseOrderPrintLayout({ po, company }) {
         <div>
           <h1 style={{ fontSize: 20, marginBottom: 2 }}>{company?.name || "Company"}</h1>
           <p style={{ fontSize: 12, color: "#666", margin: 0 }}>{company?.address}</p>
-          <p style={{ fontSize: 12, color: "#666", margin: 0 }}>GSTIN: {company?.gstin || "—"}</p>
+          <p style={{ fontSize: 12, color: "#666", margin: 0 }}>GSTIN: {company?.gstin || "â€”"}</p>
         </div>
         <div style={{ textAlign: "right" }}>
           <h2 style={{ fontSize: 18, margin: 0 }}>PURCHASE ORDER</h2>
@@ -5151,11 +5189,11 @@ function PurchaseOrderPrintLayout({ po, company }) {
           <p style={{ fontSize: 12, fontWeight: "bold", marginBottom: 2 }}>Vendor</p>
           <p style={{ fontSize: 12, margin: 0 }}>{po.vendorName}</p>
           <p style={{ fontSize: 12, margin: 0, color: "#666" }}>{po.vendorAddress}</p>
-          <p style={{ fontSize: 12, margin: 0, color: "#666" }}>GSTIN: {po.vendorGstin || "—"}</p>
+          <p style={{ fontSize: 12, margin: 0, color: "#666" }}>GSTIN: {po.vendorGstin || "â€”"}</p>
         </div>
         <div style={{ textAlign: "right" }}>
           <p style={{ fontSize: 12, fontWeight: "bold", marginBottom: 2 }}>Deliver to</p>
-          <p style={{ fontSize: 12, margin: 0, color: "#666" }}>{po.deliveryAddress || company?.address || "—"}</p>
+          <p style={{ fontSize: 12, margin: 0, color: "#666" }}>{po.deliveryAddress || company?.address || "â€”"}</p>
         </div>
       </div>
 
@@ -5174,7 +5212,7 @@ function PurchaseOrderPrintLayout({ po, company }) {
           {(po.items || []).map((it) => (
             <tr key={it.id} style={{ borderBottom: "1px solid #eee" }}>
               <td style={{ padding: 6 }}>{it.description}</td>
-              <td style={{ padding: 6 }}>{it.hsn || "—"}</td>
+              <td style={{ padding: 6 }}>{it.hsn || "â€”"}</td>
               <td style={{ padding: 6, textAlign: "right" }}>{it.qty}</td>
               <td style={{ padding: 6 }}>{it.unit}</td>
               <td style={{ padding: 6, textAlign: "right" }}>{fmt(it.rate)}</td>
@@ -5343,7 +5381,7 @@ function PayrollTab({ slips, setSlips, employees, attendance, company, setPrintC
     setOpen(false);
   };
 
-  const nameFor = (rowId) => employees.find((e) => e.id === rowId)?.name || "—";
+  const nameFor = (rowId) => employees.find((e) => e.id === rowId)?.name || "â€”";
   const totalOf = (s) => {
     const g = EARNINGS_FIELDS.reduce((sum, f) => sum + Number(s.earnings?.[f.key] || 0), 0);
     const d = DEDUCTION_FIELDS.reduce((sum, f) => sum + Number(s.deductions?.[f.key] || 0), 0);
@@ -5371,7 +5409,7 @@ function PayrollTab({ slips, setSlips, employees, attendance, company, setPrintC
         <div>
           <h2 className="font-bold text-lg text-neutral-900">Payroll</h2>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Every current employee, merged live with Attendance — pick a month to see who's generated and who isn't.
+            Every current employee, merged live with Attendance â€” pick a month to see who's generated and who isn't.
           </p>
         </div>
         <AddButton onClick={openAdd} text="New salary slip" />
@@ -5385,7 +5423,7 @@ function PayrollTab({ slips, setSlips, employees, attendance, company, setPrintC
       <Table
         emptyMsg="Add employees first (Employees & Salary tab) to see them here."
         columns={[
-          { key: "empId", label: "Emp ID", render: (r) => r.emp.employeeId || "—" },
+          { key: "empId", label: "Emp ID", render: (r) => r.emp.employeeId || "â€”" },
           { key: "employee", label: "Employee", render: (r) => r.emp.name },
           { key: "gross", label: "Gross", render: (r) => fmt(r.gross) },
           { key: "deductions", label: "Deductions", render: (r) => fmt(r.deductions) },
@@ -5457,7 +5495,7 @@ function PayrollTab({ slips, setSlips, employees, attendance, company, setPrintC
             <div className="grid grid-cols-2 gap-3">
               <Field label="Employee">
                 <select className={inputCls} value={form.employeeRowId} onChange={(e) => onEmployeeChange(e.target.value)}>
-                  <option value="">— select —</option>
+                  <option value="">â€” select â€”</option>
                   {employees.map((e) => (
                     <option key={e.id} value={e.id}>{e.name}</option>
                   ))}
@@ -5470,19 +5508,19 @@ function PayrollTab({ slips, setSlips, employees, attendance, company, setPrintC
 
             {selectedEmployee && (
               <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 text-xs text-neutral-600 grid grid-cols-2 gap-x-4 gap-y-1">
-                <div><strong>Emp ID:</strong> {selectedEmployee.employeeId || "—"}</div>
-                <div><strong>Department:</strong> {selectedEmployee.department || "—"}</div>
-                <div><strong>Designation:</strong> {selectedEmployee.role || "—"}</div>
-                <div><strong>Work status:</strong> {selectedEmployee.workStatus || "—"}</div>
-                <div><strong>DOJ:</strong> {selectedEmployee.joiningDate || "—"}</div>
-                <div><strong>Bank:</strong> {selectedEmployee.bankName || "—"} {selectedEmployee.accountNumber ? `(${selectedEmployee.accountNumber})` : ""}</div>
-                <div><strong>IFSC:</strong> {selectedEmployee.ifsc || "—"}</div>
-                <div><strong>UAN (PF):</strong> {selectedEmployee.pfNumber || "—"}</div>
-                <div><strong>ESI No.:</strong> {selectedEmployee.esiNumber || "—"}</div>
-                <div><strong>PAN:</strong> {selectedEmployee.pan || "—"}</div>
+                <div><strong>Emp ID:</strong> {selectedEmployee.employeeId || "â€”"}</div>
+                <div><strong>Department:</strong> {selectedEmployee.department || "â€”"}</div>
+                <div><strong>Designation:</strong> {selectedEmployee.role || "â€”"}</div>
+                <div><strong>Work status:</strong> {selectedEmployee.workStatus || "â€”"}</div>
+                <div><strong>DOJ:</strong> {selectedEmployee.joiningDate || "â€”"}</div>
+                <div><strong>Bank:</strong> {selectedEmployee.bankName || "â€”"} {selectedEmployee.accountNumber ? `(${selectedEmployee.accountNumber})` : ""}</div>
+                <div><strong>IFSC:</strong> {selectedEmployee.ifsc || "â€”"}</div>
+                <div><strong>UAN (PF):</strong> {selectedEmployee.pfNumber || "â€”"}</div>
+                <div><strong>ESI No.:</strong> {selectedEmployee.esiNumber || "â€”"}</div>
+                <div><strong>PAN:</strong> {selectedEmployee.pan || "â€”"}</div>
                 {att && (
                   <div className="col-span-2 pt-1 border-t border-neutral-200 mt-1">
-                    <strong>Attendance this month:</strong> Present {att.present} · Half-day {att.halfDay} · CL (YTD) {att.clYear}/{LEAVE_LIMITS.CL} · ML (YTD) {att.mlYear}/{LEAVE_LIMITS.ML} · Permission (month) {att.permission}/{LEAVE_LIMITS.Permission}{" "}
+                    <strong>Attendance this month:</strong> Present {att.present} Â· Half-day {att.halfDay} Â· CL (YTD) {att.clYear}/{LEAVE_LIMITS.CL} Â· ML (YTD) {att.mlYear}/{LEAVE_LIMITS.ML} Â· Permission (month) {att.permission}/{LEAVE_LIMITS.Permission}{" "}
                     <button onClick={suggestLeaveDeduction} className="ml-2 text-red-600 font-semibold hover:text-red-700">
                       Suggest leave deduction
                     </button>
@@ -5604,8 +5642,8 @@ function SalarySlipPrintLayout({ slip, employee, company }) {
       <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "12px" }}>
         <thead>
           <tr style={{ background: "#f3f3f3" }}>
-            <th style={cell}>Earnings</th><th style={{ ...cell, textAlign: "right" }}>Amount (₹)</th>
-            <th style={cell}>Deductions</th><th style={{ ...cell, textAlign: "right" }}>Amount (₹)</th>
+            <th style={cell}>Earnings</th><th style={{ ...cell, textAlign: "right" }}>Amount (â‚¹)</th>
+            <th style={cell}>Deductions</th><th style={{ ...cell, textAlign: "right" }}>Amount (â‚¹)</th>
           </tr>
         </thead>
         <tbody>
@@ -5728,7 +5766,7 @@ function LegalDocsTab({ docs, setDocs, customCategories, setCustomCategories }) 
       <div>
         <h2 className="font-bold text-lg text-neutral-900">Legal Documents</h2>
         <p className="text-xs text-neutral-400 mt-0.5">
-          Company-wide records — incorporation certificate, GST certificate, lease agreement, and other documents not tied to a specific transaction.
+          Company-wide records â€” incorporation certificate, GST certificate, lease agreement, and other documents not tied to a specific transaction.
         </p>
       </div>
 
@@ -5799,7 +5837,7 @@ function LegalDocsTab({ docs, setDocs, customCategories, setCustomCategories }) 
                 }}
               >
                 {allCategories.map((c) => <option key={c}>{c}</option>)}
-                <option value="__new__">+ Add new category…</option>
+                <option value="__new__">+ Add new categoryâ€¦</option>
               </select>
               {showNewCategory && (
                 <div className="flex gap-2 mt-1.5">
@@ -5819,7 +5857,7 @@ function LegalDocsTab({ docs, setDocs, customCategories, setCustomCategories }) 
                 </div>
               )}
               {!showNewCategory && (
-                <span className="text-[11px] text-neutral-400">Don't see the right one? Pick "+ Add new category…" — it'll be saved for next time.</span>
+                <span className="text-[11px] text-neutral-400">Don't see the right one? Pick "+ Add new categoryâ€¦" â€” it'll be saved for next time.</span>
               )}
             </Field>
             <Field label="Issue date">
@@ -5849,9 +5887,9 @@ function formatGSTIN(raw) {
   return raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 15);
 }
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-// Enforces the GSTIN shape live, position by position — same approach as
+// Enforces the GSTIN shape live, position by position â€” same approach as
 // formatPanStrict, since a GSTIN literally has a PAN embedded inside it
-// (positions 3–12): 2 digits (state code) + 5 letters + 4 digits + 1 letter
+// (positions 3â€“12): 2 digits (state code) + 5 letters + 4 digits + 1 letter
 // (that's the embedded PAN) + 1 entity code (1-9 or A-Z) + a fixed "Z" +
 // 1 checksum character. A wrong-type keystroke for the current position is
 // simply dropped instead of being accepted and only flagged later.
@@ -5926,7 +5964,7 @@ function PartyRegistrationTab({ registrations, setRegistrations, company, setPri
   const clientCount = registrations.filter((r) => r.partyType === "Client").length;
   const vendorCount = registrations.filter((r) => r.partyType === "Vendor").length;
 
-  // Everything below is scoped to whichever type is selected in the dropdown —
+  // Everything below is scoped to whichever type is selected in the dropdown â€”
   // switching it changes the whole view, not just a filter on top of a mixed list.
   const viewRegistrations = registrations.filter((r) => r.partyType === viewType);
   const viewMsmeCount = viewRegistrations.filter((r) => r.msmeStatus === "MSME").length;
@@ -5957,7 +5995,7 @@ function PartyRegistrationTab({ registrations, setRegistrations, company, setPri
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
               className={`${inputCls} pl-8 w-56`}
-              placeholder={`Search ${viewType.toLowerCase()}…`}
+              placeholder={`Search ${viewType.toLowerCase()}â€¦`}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -5979,7 +6017,7 @@ function PartyRegistrationTab({ registrations, setRegistrations, company, setPri
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <Card label={`${viewType}s Registered`} value={viewRegistrations.length} sub={`Out of ${registrations.length} total — ${clientCount} Clients · ${vendorCount} Vendors`} />
+        <Card label={`${viewType}s Registered`} value={viewRegistrations.length} sub={`Out of ${registrations.length} total â€” ${clientCount} Clients Â· ${vendorCount} Vendors`} />
         <Card label={`${viewType} MSME`} value={viewMsmeCount} tone={viewMsmeCount ? "good" : "default"} sub={`${viewNonMsmeCount} Non-MSME`} />
       </div>
 
@@ -5993,8 +6031,8 @@ function PartyRegistrationTab({ registrations, setRegistrations, company, setPri
           { key: "name", label: "Name" },
           { key: "gstin", label: "GSTIN" },
           { key: "msmeStatus", label: "MSME Status", render: (r) => <Pill tone={r.msmeStatus === "MSME" ? "green" : "gray"}>{r.msmeStatus}</Pill> },
-          { key: "authority1Name", label: "Primary Contact", render: (r) => r.authority1Name ? `${r.authority1Name} (${r.authority1Contact || "—"})` : "—" },
-          { key: "authority2Name", label: "Secondary Contact", render: (r) => r.authority2Name ? `${r.authority2Name} (${r.authority2Contact || "—"})` : "—" },
+          { key: "authority1Name", label: "Primary Contact", render: (r) => r.authority1Name ? `${r.authority1Name} (${r.authority1Contact || "â€”"})` : "â€”" },
+          { key: "authority2Name", label: "Secondary Contact", render: (r) => r.authority2Name ? `${r.authority2Name} (${r.authority2Contact || "â€”"})` : "â€”" },
           {
             key: "download",
             label: "",
@@ -6045,7 +6083,7 @@ function PartyRegistrationTab({ registrations, setRegistrations, company, setPri
               />
               <span className="text-[11px] text-neutral-400">Format: 2 digits + 5 letters + 4 digits + 1 letter + entity code + "Z" + checksum.</span>
               {form.gstin && form.gstin.length < 15 && (
-                <span className="text-xs text-amber-600">GSTIN must be exactly 15 characters — {15 - form.gstin.length} more needed.</span>
+                <span className="text-xs text-amber-600">GSTIN must be exactly 15 characters â€” {15 - form.gstin.length} more needed.</span>
               )}
             </Field>
             <Field label="MSME Status">
@@ -6160,11 +6198,11 @@ function PartyRegistrationListPrintLayout({ registrations, viewType, company }) 
           {registrations.map((r) => (
             <tr key={r.id} style={{ borderBottom: "1px solid #eee" }}>
               <td style={{ padding: 4 }}>{r.name}</td>
-              <td style={{ padding: 4 }}>{r.gstin || "—"}</td>
+              <td style={{ padding: 4 }}>{r.gstin || "â€”"}</td>
               <td style={{ padding: 4 }}>{r.msmeStatus}</td>
-              <td style={{ padding: 4 }}>{r.authority1Name ? `${r.authority1Name} (${r.authority1Contact || "—"})` : "—"}</td>
-              <td style={{ padding: 4 }}>{r.authority2Name ? `${r.authority2Name} (${r.authority2Contact || "—"})` : "—"}</td>
-              <td style={{ padding: 4 }}>{r.bankName ? `${r.bankName} · ${r.accountNumber || "—"}` : "—"}</td>
+              <td style={{ padding: 4 }}>{r.authority1Name ? `${r.authority1Name} (${r.authority1Contact || "â€”"})` : "â€”"}</td>
+              <td style={{ padding: 4 }}>{r.authority2Name ? `${r.authority2Name} (${r.authority2Contact || "â€”"})` : "â€”"}</td>
+              <td style={{ padding: 4 }}>{r.bankName ? `${r.bankName} Â· ${r.accountNumber || "â€”"}` : "â€”"}</td>
             </tr>
           ))}
         </tbody>
@@ -6202,7 +6240,7 @@ function blankWorkflowRecord(orderId) {
 }
 
 function ProjectCompletionPrintLayout({ order, rec, employees, company }) {
-  const empName = (id) => employees.find((e) => e.id === id)?.name || "—";
+  const empName = (id) => employees.find((e) => e.id === id)?.name || "â€”";
   const labelCell = { border: "1px solid #ddd", padding: "6px", fontSize: "12px", background: "#f8f8f8", fontWeight: "bold", width: "22%" };
   const cell = { border: "1px solid #ddd", padding: "6px", fontSize: "12px" };
   const dispatchDate = rec.stages.completed.date;
@@ -6246,10 +6284,10 @@ function ProjectCompletionPrintLayout({ order, rec, employees, company }) {
             return (
               <tr key={s.key}>
                 <td style={cell}>{s.label}</td>
-                <td style={cell}>{st.responsibleId ? empName(st.responsibleId) : "—"}</td>
-                <td style={cell}>{st.remarks || "—"}</td>
-                <td style={cell}>{st.pmApprovedBy ? `${empName(st.pmApprovedBy)} (${st.pmApprovalDate})` : "—"}</td>
-                <td style={cell}>{st.date || "—"}</td>
+                <td style={cell}>{st.responsibleId ? empName(st.responsibleId) : "â€”"}</td>
+                <td style={cell}>{st.remarks || "â€”"}</td>
+                <td style={cell}>{st.pmApprovedBy ? `${empName(st.pmApprovedBy)} (${st.pmApprovalDate})` : "â€”"}</td>
+                <td style={cell}>{st.date || "â€”"}</td>
               </tr>
             );
           })}
@@ -6277,7 +6315,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
   const [detailOrderId, setDetailOrderId] = useState(null);
 
   // Material Requests: a way for whoever's running the project to flag "we
-  // need more thinner/resin/clear coat for this job" — visible directly in
+  // need more thinner/resin/clear coat for this job" â€” visible directly in
   // the Inventory tab so the Purchase Manager sees it and can order it in.
   const [matReqForm, setMatReqForm] = useState({ itemName: "", qty: "", unit: "", note: "" });
   const projectRequests = detailOrderId ? materialRequests.filter((r) => r.orderId === detailOrderId) : [];
@@ -6304,7 +6342,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
   };
 
   // The link: any order without a workflow record yet gets one automatically,
-  // starting at the Marketing stage — this is what makes new Orders/Projects
+  // starting at the Marketing stage â€” this is what makes new Orders/Projects
   // entries show up here without any manual setup.
   useEffect(() => {
     const missing = orders.filter((o) => !workflow.some((w) => w.orderId === o.id));
@@ -6392,13 +6430,13 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
       <div>
         <h2 className="font-bold text-lg text-neutral-900">Production Workflow</h2>
         <p className="text-xs text-neutral-400 mt-0.5">
-          Every order from Orders/Projects flows through here automatically — click a card to move it forward and log remarks.
+          Every order from Orders/Projects flows through here automatically â€” click a card to move it forward and log remarks.
         </p>
       </div>
 
       {orders.length === 0 ? (
         <div className="text-center text-neutral-400 text-sm py-14 border border-dashed border-neutral-200 rounded-xl">
-          Add an order in Orders/Projects first — it'll appear here in Marketing automatically.
+          Add an order in Orders/Projects first â€” it'll appear here in Marketing automatically.
         </div>
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-2">
@@ -6410,7 +6448,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                 <div className="px-2 py-1.5 mb-2">
                   <div className={`text-xs font-bold uppercase tracking-wide ${sc.header}`}>{stage.label}</div>
                   <div className="text-[11px] text-neutral-400">
-                    {stage.desc} · <span className={`inline-block px-1.5 py-0.5 rounded-full font-semibold ${sc.badge}`}>{colOrders.length}</span>
+                    {stage.desc} Â· <span className={`inline-block px-1.5 py-0.5 rounded-full font-semibold ${sc.badge}`}>{colOrders.length}</span>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -6428,7 +6466,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                         <div className="text-xs text-neutral-500 mb-1">{o.client}</div>
                         {o.deadline && <div className="text-[11px] text-neutral-400">Deadline: {o.deadline}</div>}
                         {stageData?.responsibleId && (
-                          <div className="text-[11px] text-neutral-500 mt-1">👤 {empName(stageData.responsibleId)}</div>
+                          <div className="text-[11px] text-neutral-500 mt-1">ðŸ‘¤ {empName(stageData.responsibleId)}</div>
                         )}
                         {stageData?.remarks && (
                           <div className="text-[11px] text-neutral-500 mt-1 line-clamp-2">"{stageData.remarks}"</div>
@@ -6459,11 +6497,11 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
       )}
 
       {detailOrder && detailRec && (
-        <Modal title={`${detailOrder.name} — Production Workflow`} onClose={() => setDetailOrderId(null)}>
+        <Modal title={`${detailOrder.name} â€” Production Workflow`} onClose={() => setDetailOrderId(null)}>
           <div className="flex items-start justify-between gap-3 mb-4">
             <div className="text-xs text-neutral-500">
               Client: <strong className="text-neutral-700">{detailOrder.client}</strong>
-              {detailOrder.deadline && <> · Deadline: <strong className="text-neutral-700">{detailOrder.deadline}</strong></>}
+              {detailOrder.deadline && <> Â· Deadline: <strong className="text-neutral-700">{detailOrder.deadline}</strong></>}
             </div>
             {detailRec.stages.completed.status === "Done" && (
               <button
@@ -6499,7 +6537,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                           : "bg-neutral-200 text-neutral-500"
                       }`}
                     >
-                      {isDone ? "✓" : i + 1}
+                      {isDone ? "âœ“" : i + 1}
                     </div>
                     <div className={`text-[10px] mt-1 w-16 text-center leading-tight ${isCurrent ? "text-red-600 font-semibold" : "text-neutral-400"}`}>
                       {s.label}
@@ -6526,7 +6564,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                     value={st.responsibleId}
                     onChange={(e) => updateStageField(detailOrder.id, stage.key, "responsibleId", e.target.value)}
                   >
-                    <option value="">— none —</option>
+                    <option value="">â€” none â€”</option>
                     {employees.map((e) => (
                       <option key={e.id} value={e.id}>{e.name}</option>
                     ))}
@@ -6537,7 +6575,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                     className={inputCls}
                     value={st.remarks}
                     onChange={(e) => updateStageField(detailOrder.id, stage.key, "remarks", e.target.value)}
-                    placeholder="Requirement notes, approval remarks, QC notes…"
+                    placeholder="Requirement notes, approval remarks, QC notesâ€¦"
                   />
                 </Field>
                 <AttachmentsField recordId={`${detailOrder.id}-${stage.key}`} label="Attachments (CAD file, inspection sheet, etc.)" />
@@ -6547,7 +6585,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                   {st.pmApproved ? (
                     <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
                       <div className="text-xs text-emerald-700">
-                        ✓ Approved by <strong>{empName(st.pmApprovedBy) || "—"}</strong> on {st.pmApprovalDate}
+                        âœ“ Approved by <strong>{empName(st.pmApprovedBy) || "â€”"}</strong> on {st.pmApprovalDate}
                       </div>
                       <button
                         onClick={() => revokeApproval(detailOrder.id, stage.key)}
@@ -6563,7 +6601,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                       </p>
                       <div className="flex gap-2">
                         <select id={`pm-select-${detailOrder.id}`} key={stage.key} className={`${inputCls} flex-1`} defaultValue="">
-                          <option value="">— select Program Manager —</option>
+                          <option value="">â€” select Program Manager â€”</option>
                           {employees.map((e) => (
                             <option key={e.id} value={e.id}>{e.name}</option>
                           ))}
@@ -6597,7 +6635,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                       title={!st.pmApproved ? "Needs Program Manager approval first" : ""}
                       className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      ✓ {st.status === "Done" ? "Completed" : "Mark completed & dispatch"}
+                      âœ“ {st.status === "Done" ? "Completed" : "Mark completed & dispatch"}
                     </button>
                   ) : (
                     <button
@@ -6623,7 +6661,7 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                 if (st.status !== "Done") return null;
                 return (
                   <div key={s.key} className="text-xs bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-2">
-                    <div className="font-semibold text-neutral-700">{s.label} <span className="text-neutral-400 font-normal">· {st.date}</span></div>
+                    <div className="font-semibold text-neutral-700">{s.label} <span className="text-neutral-400 font-normal">Â· {st.date}</span></div>
                     {st.responsibleId && <div className="text-neutral-500">Responsible: {empName(st.responsibleId)}</div>}
                     {st.pmApprovedBy && <div className="text-neutral-500">Approved by: {empName(st.pmApprovedBy)} (PM) on {st.pmApprovalDate}</div>}
                     {st.remarks && <div className="text-neutral-500">"{st.remarks}"</div>}
@@ -6633,11 +6671,11 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
             </div>
           </div>
 
-          {/* Material requests — notifies the Purchase Manager via Inventory */}
+          {/* Material requests â€” notifies the Purchase Manager via Inventory */}
           <div className="mt-4">
             <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Material requests (notifies the Purchase Manager)</div>
             <p className="text-xs text-neutral-400 mb-2">
-              Flag anything this project still needs — thinner, resin, clear coat, whatever's short — even if it isn't in Inventory yet. It shows up as a pending request on the Inventory tab for the Purchase Manager to buy and add in.
+              Flag anything this project still needs â€” thinner, resin, clear coat, whatever's short â€” even if it isn't in Inventory yet. It shows up as a pending request on the Inventory tab for the Purchase Manager to buy and add in.
             </p>
             {projectRequests.length > 0 && (
               <div className="border border-neutral-200 rounded-lg overflow-hidden mb-3">
@@ -6658,8 +6696,8 @@ function ProductionWorkflowTab({ orders, setOrders, employees, workflow, setWork
                       <tr key={r.id} className="border-t border-neutral-100">
                         <td className="px-3 py-1.5 font-medium text-neutral-800">{r.itemName}</td>
                         <td className="px-3 py-1.5 text-right">{r.qty}</td>
-                        <td className="px-3 py-1.5 text-neutral-500">{r.unit || "—"}</td>
-                        <td className="px-3 py-1.5 text-neutral-500">{r.note || "—"}</td>
+                        <td className="px-3 py-1.5 text-neutral-500">{r.unit || "â€”"}</td>
+                        <td className="px-3 py-1.5 text-neutral-500">{r.note || "â€”"}</td>
                         <td className="px-3 py-1.5">{r.requestedDate}</td>
                         <td className="px-3 py-1.5">
                           <Pill tone={r.status === "Purchased" ? "green" : r.status === "Pending" ? "amber" : "gray"}>{r.status}</Pill>
