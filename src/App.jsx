@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   LayoutDashboard, Package, Users, CalendarCheck, Wallet, Briefcase,
-  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut, ClipboardList, Upload, CheckCircle2, Download
+  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut, ClipboardList, MessageCircle
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import { useAuth } from "./auth/AuthContext.jsx";
@@ -25,6 +25,7 @@ const KEYS = {
   legalDocCategories: "nova-legal-doc-categories",
   materialRequests: "nova-material-requests",
   purchaseOrders: "nova-purchase-orders",
+  whatsappRecipients: "nova-whatsapp-recipients",
 };
 
 // Persistence: Supabase Postgres (table `app_storage`, one row per key) — real
@@ -704,6 +705,7 @@ export default function NovaOps() {
   const [legalDocCategories, setLegalDocCategories] = useState([]);
   const [materialRequests, setMaterialRequests] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [whatsappRecipients, setWhatsappRecipients] = useState([]);
   const [company, setCompany] = useState({ name: "NOVA", address: "", gstin: "" });
   const [printContent, setPrintContent] = useState(null);
   const [printTitle, setPrintTitle] = useState("nova-document");
@@ -749,7 +751,7 @@ export default function NovaOps() {
 
   useEffect(() => {
     (async () => {
-      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc, mr, po] = await Promise.all([
+      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc, mr, po, wr] = await Promise.all([
         loadList(KEYS.inventory),
         loadList(KEYS.attendance),
         loadList(KEYS.employees),
@@ -766,6 +768,7 @@ export default function NovaOps() {
         loadList(KEYS.legalDocCategories),
         loadList(KEYS.materialRequests),
         loadList(KEYS.purchaseOrders),
+        loadList(KEYS.whatsappRecipients),
       ]);
       setInventory(inv);
       setAttendance(att);
@@ -783,6 +786,7 @@ export default function NovaOps() {
       setLegalDocCategories(ldc);
       setMaterialRequests(mr);
       setPurchaseOrders(po);
+      setWhatsappRecipients(wr);
       setLoading(false);
     })();
   }, []);
@@ -833,6 +837,9 @@ export default function NovaOps() {
   useEffect(() => {
     if (!loading) saveList(KEYS.purchaseOrders, purchaseOrders);
   }, [purchaseOrders, loading]);
+  useEffect(() => {
+    if (!loading) saveList(KEYS.whatsappRecipients, whatsappRecipients);
+  }, [whatsappRecipients, loading]);
   useEffect(() => {
     if (!loading) saveObj(KEYS.company, company);
   }, [company, loading]);
@@ -983,6 +990,8 @@ export default function NovaOps() {
             setRecords={setAttendance}
             employees={employees}
             company={company}
+            whatsappRecipients={whatsappRecipients}
+            setWhatsappRecipients={setWhatsappRecipients}
             setPrintContent={setPrintContent}
             setPrintTitle={setPrintTitle}
           />
@@ -1246,96 +1255,6 @@ function Overview({ inventory, attendance, employees, finance, orders, payments 
 // ---------- INVENTORY ----------
 const BLANK_ITEM = { name: "", sku: "", category: "", quantity: "", unit: "pcs", reorderLevel: "", unitCost: "" };
 
-// ---- Inventory Excel import ----
-// Recognised header names per portal field (normalised: lowercased, letters/
-// digits only — so "Unit Cost", "unit_cost", "Unit-Cost (₹)" all match). Any
-// spreadsheet column that isn't in one of these lists (e.g. a serial-number
-// "S.No" column) is simply never read — it doesn't need to be excluded, it's
-// never mapped to a portal field in the first place.
-const INVENTORY_IMPORT_ALIASES = {
-  name: ["name", "itemname", "productname", "item", "product", "materialname", "material", "description"],
-  sku: ["sku", "skucode", "itemcode", "code", "productcode", "partno", "partnumber"],
-  category: ["category", "cat", "type"],
-  quantity: ["quantity", "qty", "stock", "instock", "currentstock", "openingstock", "closingstock"],
-  unit: ["unit", "uom", "units", "measure"],
-  reorderLevel: ["reorderlevel", "reorderqty", "reorderpoint", "reorder", "minstock", "minimumstock", "minqty"],
-  unitCost: ["unitcost", "cost", "price", "rate", "unitprice", "costperunit", "rateperunit"],
-};
-const INVENTORY_TEMPLATE_COLUMNS = [
-  { label: "Item Name", key: "name" },
-  { label: "SKU", key: "sku" },
-  { label: "Category", key: "category" },
-  { label: "Quantity", key: "quantity" },
-  { label: "Unit", key: "unit" },
-  { label: "Reorder Level", key: "reorderLevel" },
-  { label: "Unit Cost", key: "unitCost" },
-];
-const normalizeHeader = (h) => String(h ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-function excelCellToNumber(v) {
-  if (v === "" || v === null || v === undefined) return 0;
-  const n = Number(String(v).replace(/,/g, "").replace(/[^0-9.\-]/g, ""));
-  return Number.isFinite(n) ? n : 0;
-}
-
-// Downloads a blank .xlsx with exactly the column headers the importer
-// recognises, so a purchase manager filling it in gets the format right the
-// first time instead of guessing at column names.
-function downloadInventoryTemplate() {
-  exportExcel([], INVENTORY_TEMPLATE_COLUMNS.map((c) => ({ label: c.label, value: () => "" })), "Nova-Inventory-Import-Template", "Inventory");
-}
-
-// Reads an uploaded workbook (.xlsx/.xls/.csv) and maps it onto the portal's
-// inventory fields. Any column the portal doesn't recognise (e.g. "S.No") is
-// dropped automatically since it's never looked up. Rows missing the one
-// required portal field — Item Name — are omitted from the import rather than
-// creating a blank/broken row. Existing items are matched and updated by SKU
-// (when the row has one); everything else is added as a new item.
-async function parseInventoryExcelFile(file, existingItems) {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array" });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-
-  const getField = (normRow, field) => {
-    for (const alias of INVENTORY_IMPORT_ALIASES[field]) {
-      if (normRow[alias] !== undefined && String(normRow[alias]).trim() !== "") return normRow[alias];
-    }
-    return "";
-  };
-
-  const nextItems = [...existingItems];
-  let added = 0, updated = 0, skipped = 0;
-
-  rows.forEach((row) => {
-    const normRow = {};
-    Object.entries(row).forEach(([k, v]) => { normRow[normalizeHeader(k)] = v; });
-
-    const name = String(getField(normRow, "name")).trim();
-    if (!name) { skipped += 1; return; } // required portal field missing — omit this row
-
-    const sku = String(getField(normRow, "sku")).trim();
-    const category = String(getField(normRow, "category")).trim();
-    const unit = String(getField(normRow, "unit")).trim() || "pcs";
-    const quantity = String(excelCellToNumber(getField(normRow, "quantity")));
-    const reorderLevel = String(excelCellToNumber(getField(normRow, "reorderLevel")));
-    const unitCost = String(excelCellToNumber(getField(normRow, "unitCost")));
-
-    const existingIdx = sku
-      ? nextItems.findIndex((i) => (i.sku || "").trim().toLowerCase() === sku.toLowerCase())
-      : -1;
-
-    if (existingIdx >= 0) {
-      nextItems[existingIdx] = { ...nextItems[existingIdx], name, category, unit, quantity, reorderLevel, unitCost };
-      updated += 1;
-    } else {
-      nextItems.push({ id: uid(), name, sku, category, quantity, unit, reorderLevel, unitCost });
-      added += 1;
-    }
-  });
-
-  return { nextItems, added, updated, skipped, totalRows: rows.length };
-}
-
 // Assigns each category a consistent color (same category always gets the
 // same one), purely so the product catalogue table has some visual variety
 // per row — mirrors the colored icon tiles in the reference design.
@@ -1376,24 +1295,6 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const [fulfillingRequestId, setFulfillingRequestId] = useState(null);
-  const [importResult, setImportResult] = useState(null); // { added, updated, skipped, totalRows } | { error }
-  const [importing, setImporting] = useState(false);
-
-  const handleImportFile = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // reset so re-selecting the same file re-triggers onChange
-    if (!file) return;
-    setImporting(true);
-    setImportResult(null);
-    try {
-      const { nextItems, added, updated, skipped, totalRows } = await parseInventoryExcelFile(file, items);
-      setItems(nextItems);
-      setImportResult({ added, updated, skipped, totalRows });
-    } catch (err) {
-      setImportResult({ error: "Couldn't read that file. Use the Download Template button for the expected format, or make sure it's a valid .xlsx/.xls/.csv file." });
-    }
-    setImporting(false);
-  };
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -1547,17 +1448,6 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
             <Printer size={16} /> Download PDF
           </button>
           <button
-            onClick={downloadInventoryTemplate}
-            className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-full transition"
-          >
-            <Download size={16} /> Template
-          </button>
-          <label className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-full transition cursor-pointer">
-            {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-            {importing ? "Importing…" : "Import Excel"}
-            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={importing} onChange={handleImportFile} />
-          </label>
-          <button
             onClick={openAdd}
             className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold pl-3 pr-4 py-2 rounded-full transition"
           >
@@ -1565,30 +1455,6 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
           </button>
         </div>
       </div>
-
-      {importResult && (
-        importResult.error ? (
-          <div className="flex items-start justify-between gap-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
-            <div className="flex items-start gap-2">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-              <span>{importResult.error}</span>
-            </div>
-            <button onClick={() => setImportResult(null)} className="text-red-300 hover:text-red-600 shrink-0"><X size={14} /></button>
-          </div>
-        ) : (
-          <div className="flex items-start justify-between gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">
-            <div className="flex items-start gap-2">
-              <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
-              <span>
-                Import complete — {importResult.added} item{importResult.added === 1 ? "" : "s"} added, {importResult.updated} updated (matched by SKU)
-                {importResult.skipped > 0 && `, ${importResult.skipped} row${importResult.skipped === 1 ? "" : "s"} skipped (no item name)`}
-                {" "}out of {importResult.totalRows} row{importResult.totalRows === 1 ? "" : "s"} in the file.
-              </span>
-            </div>
-            <button onClick={() => setImportResult(null)} className="text-emerald-300 hover:text-emerald-600 shrink-0"><X size={14} /></button>
-          </div>
-        )
-      )}
 
       <div className="grid grid-cols-2 gap-4">
         <Card label="Inventory Value" value={fmt(totalInventoryValue)} sub={`${items.length} SKUs tracked`} />
@@ -2039,7 +1905,7 @@ function formatLeaveCount(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function AttendanceTab({ records, setRecords, employees, company, setPrintContent, setPrintTitle }) {
+function AttendanceTab({ records, setRecords, employees, company, whatsappRecipients, setWhatsappRecipients, setPrintContent, setPrintTitle }) {
   const [date, setDate] = useState(todayISO());
   const [draft, setDraft] = useState({});
   const [draftSlot, setDraftSlot] = useState({});
@@ -2143,6 +2009,51 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
 
   const isFutureDate = date > todayISO();
 
+  // ---- WhatsApp: plain-text daily summary, one-click via wa.me ----
+  const [newRecipientName, setNewRecipientName] = useState("");
+  const [newRecipientPhone, setNewRecipientPhone] = useState("");
+
+  const todaysRecords = records.filter((r) => r.date === date);
+  const waCounts = {
+    present: todaysRecords.filter((r) => r.status === "Present").length,
+    halfDay: todaysRecords.filter((r) => r.status === "Half-day").length,
+    cl: todaysRecords.filter((r) => r.status === "CL" || r.status === "Half CL").length,
+    ml: todaysRecords.filter((r) => r.status === "ML").length,
+    permission: todaysRecords.filter((r) => r.hasPermission).length,
+  };
+  const markedNames = new Set(todaysRecords.map((r) => r.employeeName));
+  const notMarked = employees.filter((e) => !markedNames.has(e.name)).length;
+
+  const buildWhatsAppMessage = () => {
+    const lines = [
+      `*${company.name} — Daily Attendance*`,
+      `Date: ${date}`,
+      "",
+      `Present: ${waCounts.present}`,
+      `Half-day: ${waCounts.halfDay}`,
+      `CL: ${waCounts.cl}`,
+      `ML: ${waCounts.ml}`,
+      `Permission: ${waCounts.permission}`,
+    ];
+    if (notMarked > 0) lines.push(`Not marked yet: ${notMarked}`);
+    lines.push("", "— Sent from Nova Attendance");
+    return lines.join("\n");
+  };
+
+  const addRecipient = () => {
+    const phone = formatPhone10(newRecipientPhone);
+    if (!newRecipientName.trim() || phone.length !== 10) return;
+    setWhatsappRecipients([...whatsappRecipients, { id: uid(), name: newRecipientName.trim(), phone }]);
+    setNewRecipientName("");
+    setNewRecipientPhone("");
+  };
+  const removeRecipient = (id) => setWhatsappRecipients(whatsappRecipients.filter((r) => r.id !== id));
+
+  const sendToRecipient = (phone) => {
+    const url = `https://wa.me/91${phone}?text=${encodeURIComponent(buildWhatsAppMessage())}`;
+    window.open(url, "_blank");
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-3">
@@ -2165,6 +2076,57 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
           <span><strong>{date}</strong> is a future date. Attendance can only be recorded for today or an earlier date — this entry will not be saved.</span>
         </div>
       )}
+
+      <div className="bg-white border border-neutral-200 rounded-xl p-4">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+          <div className="text-sm font-semibold text-neutral-800">Send today's summary via WhatsApp</div>
+          <span className="text-xs text-neutral-400">Present {waCounts.present} · CL {waCounts.cl} · ML {waCounts.ml} · Permission {waCounts.permission}</span>
+        </div>
+        {whatsappRecipients.length === 0 ? (
+          <p className="text-xs text-neutral-400 mb-2">No recipients added yet — add the Director/MD's WhatsApp number below.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {whatsappRecipients.map((r) => (
+              <div key={r.id} className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full pl-3 pr-1.5 py-1">
+                <button
+                  onClick={() => sendToRecipient(r.phone)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800"
+                >
+                  <MessageCircle size={13} /> {r.name}
+                </button>
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Remove ${r.name} from WhatsApp recipients?`)) removeRecipient(r.id);
+                  }}
+                  className="text-emerald-400 hover:text-red-600 ml-1"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            className={`${inputCls} w-36`}
+            placeholder="Name (e.g. Director)"
+            value={newRecipientName}
+            onChange={(e) => setNewRecipientName(e.target.value)}
+          />
+          <input
+            className={`${inputCls} w-40`}
+            placeholder="10-digit WhatsApp no."
+            value={newRecipientPhone}
+            onChange={(e) => setNewRecipientPhone(formatPhone10(e.target.value))}
+          />
+          <button
+            onClick={addRecipient}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700"
+          >
+            <Plus size={13} /> Add recipient
+          </button>
+        </div>
+      </div>
 
       {isSunday(date) && (
         <div className="bg-neutral-100 border border-neutral-200 rounded-xl px-4 py-2 text-xs text-neutral-600">
