@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   LayoutDashboard, Package, Users, CalendarCheck, Wallet, Briefcase,
-  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut, ClipboardList
+  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut, ClipboardList, Upload, CheckCircle2, Download
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import { useAuth } from "./auth/AuthContext.jsx";
@@ -1246,6 +1246,96 @@ function Overview({ inventory, attendance, employees, finance, orders, payments 
 // ---------- INVENTORY ----------
 const BLANK_ITEM = { name: "", sku: "", category: "", quantity: "", unit: "pcs", reorderLevel: "", unitCost: "" };
 
+// ---- Inventory Excel import ----
+// Recognised header names per portal field (normalised: lowercased, letters/
+// digits only — so "Unit Cost", "unit_cost", "Unit-Cost (₹)" all match). Any
+// spreadsheet column that isn't in one of these lists (e.g. a serial-number
+// "S.No" column) is simply never read — it doesn't need to be excluded, it's
+// never mapped to a portal field in the first place.
+const INVENTORY_IMPORT_ALIASES = {
+  name: ["name", "itemname", "productname", "item", "product", "materialname", "material", "description"],
+  sku: ["sku", "skucode", "itemcode", "code", "productcode", "partno", "partnumber"],
+  category: ["category", "cat", "type"],
+  quantity: ["quantity", "qty", "stock", "instock", "currentstock", "openingstock", "closingstock"],
+  unit: ["unit", "uom", "units", "measure"],
+  reorderLevel: ["reorderlevel", "reorderqty", "reorderpoint", "reorder", "minstock", "minimumstock", "minqty"],
+  unitCost: ["unitcost", "cost", "price", "rate", "unitprice", "costperunit", "rateperunit"],
+};
+const INVENTORY_TEMPLATE_COLUMNS = [
+  { label: "Item Name", key: "name" },
+  { label: "SKU", key: "sku" },
+  { label: "Category", key: "category" },
+  { label: "Quantity", key: "quantity" },
+  { label: "Unit", key: "unit" },
+  { label: "Reorder Level", key: "reorderLevel" },
+  { label: "Unit Cost", key: "unitCost" },
+];
+const normalizeHeader = (h) => String(h ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+function excelCellToNumber(v) {
+  if (v === "" || v === null || v === undefined) return 0;
+  const n = Number(String(v).replace(/,/g, "").replace(/[^0-9.\-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Downloads a blank .xlsx with exactly the column headers the importer
+// recognises, so a purchase manager filling it in gets the format right the
+// first time instead of guessing at column names.
+function downloadInventoryTemplate() {
+  exportExcel([], INVENTORY_TEMPLATE_COLUMNS.map((c) => ({ label: c.label, value: () => "" })), "Nova-Inventory-Import-Template", "Inventory");
+}
+
+// Reads an uploaded workbook (.xlsx/.xls/.csv) and maps it onto the portal's
+// inventory fields. Any column the portal doesn't recognise (e.g. "S.No") is
+// dropped automatically since it's never looked up. Rows missing the one
+// required portal field — Item Name — are omitted from the import rather than
+// creating a blank/broken row. Existing items are matched and updated by SKU
+// (when the row has one); everything else is added as a new item.
+async function parseInventoryExcelFile(file, existingItems) {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+  const getField = (normRow, field) => {
+    for (const alias of INVENTORY_IMPORT_ALIASES[field]) {
+      if (normRow[alias] !== undefined && String(normRow[alias]).trim() !== "") return normRow[alias];
+    }
+    return "";
+  };
+
+  const nextItems = [...existingItems];
+  let added = 0, updated = 0, skipped = 0;
+
+  rows.forEach((row) => {
+    const normRow = {};
+    Object.entries(row).forEach(([k, v]) => { normRow[normalizeHeader(k)] = v; });
+
+    const name = String(getField(normRow, "name")).trim();
+    if (!name) { skipped += 1; return; } // required portal field missing — omit this row
+
+    const sku = String(getField(normRow, "sku")).trim();
+    const category = String(getField(normRow, "category")).trim();
+    const unit = String(getField(normRow, "unit")).trim() || "pcs";
+    const quantity = String(excelCellToNumber(getField(normRow, "quantity")));
+    const reorderLevel = String(excelCellToNumber(getField(normRow, "reorderLevel")));
+    const unitCost = String(excelCellToNumber(getField(normRow, "unitCost")));
+
+    const existingIdx = sku
+      ? nextItems.findIndex((i) => (i.sku || "").trim().toLowerCase() === sku.toLowerCase())
+      : -1;
+
+    if (existingIdx >= 0) {
+      nextItems[existingIdx] = { ...nextItems[existingIdx], name, category, unit, quantity, reorderLevel, unitCost };
+      updated += 1;
+    } else {
+      nextItems.push({ id: uid(), name, sku, category, quantity, unit, reorderLevel, unitCost });
+      added += 1;
+    }
+  });
+
+  return { nextItems, added, updated, skipped, totalRows: rows.length };
+}
+
 // Assigns each category a consistent color (same category always gets the
 // same one), purely so the product catalogue table has some visual variety
 // per row — mirrors the colored icon tiles in the reference design.
@@ -1286,6 +1376,24 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const [fulfillingRequestId, setFulfillingRequestId] = useState(null);
+  const [importResult, setImportResult] = useState(null); // { added, updated, skipped, totalRows } | { error }
+  const [importing, setImporting] = useState(false);
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // reset so re-selecting the same file re-triggers onChange
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const { nextItems, added, updated, skipped, totalRows } = await parseInventoryExcelFile(file, items);
+      setItems(nextItems);
+      setImportResult({ added, updated, skipped, totalRows });
+    } catch (err) {
+      setImportResult({ error: "Couldn't read that file. Use the Download Template button for the expected format, or make sure it's a valid .xlsx/.xls/.csv file." });
+    }
+    setImporting(false);
+  };
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -1439,6 +1547,17 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
             <Printer size={16} /> Download PDF
           </button>
           <button
+            onClick={downloadInventoryTemplate}
+            className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-full transition"
+          >
+            <Download size={16} /> Template
+          </button>
+          <label className="inline-flex items-center gap-1.5 bg-white border border-neutral-300 hover:border-red-400 text-sm font-semibold px-4 py-2 rounded-full transition cursor-pointer">
+            {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+            {importing ? "Importing…" : "Import Excel"}
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={importing} onChange={handleImportFile} />
+          </label>
+          <button
             onClick={openAdd}
             className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold pl-3 pr-4 py-2 rounded-full transition"
           >
@@ -1446,6 +1565,30 @@ function InventoryTab({ items, setItems, entries, setEntries, materialRequests, 
           </button>
         </div>
       </div>
+
+      {importResult && (
+        importResult.error ? (
+          <div className="flex items-start justify-between gap-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <span>{importResult.error}</span>
+            </div>
+            <button onClick={() => setImportResult(null)} className="text-red-300 hover:text-red-600 shrink-0"><X size={14} /></button>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+              <span>
+                Import complete — {importResult.added} item{importResult.added === 1 ? "" : "s"} added, {importResult.updated} updated (matched by SKU)
+                {importResult.skipped > 0 && `, ${importResult.skipped} row${importResult.skipped === 1 ? "" : "s"} skipped (no item name)`}
+                {" "}out of {importResult.totalRows} row{importResult.totalRows === 1 ? "" : "s"} in the file.
+              </span>
+            </div>
+            <button onClick={() => setImportResult(null)} className="text-emerald-300 hover:text-emerald-600 shrink-0"><X size={14} /></button>
+          </div>
+        )
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         <Card label="Inventory Value" value={fmt(totalInventoryValue)} sub={`${items.length} SKUs tracked`} />
