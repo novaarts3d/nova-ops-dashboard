@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   LayoutDashboard, Package, Users, CalendarCheck, Wallet, Briefcase,
-  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut, ClipboardList, Upload, CheckCircle2, Download
+  CreditCard, Plus, Trash2, AlertTriangle, X, Loader2, Pencil, Truck, Printer, Receipt, ShieldCheck, Boxes, Search, Building2, Workflow, ArrowRight, ArrowLeft, FileSpreadsheet, ArrowUpDown, Lock, LogOut, ClipboardList, Upload, CheckCircle2, Download, MessageCircle
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import { useAuth } from "./auth/AuthContext.jsx";
@@ -25,6 +25,7 @@ const KEYS = {
   legalDocCategories: "nova-legal-doc-categories",
   materialRequests: "nova-material-requests",
   purchaseOrders: "nova-purchase-orders",
+  whatsappRecipients: "nova-whatsapp-recipients",
 };
 
 // Persistence: Supabase Postgres (table `app_storage`, one row per key) — real
@@ -704,6 +705,7 @@ export default function NovaOps() {
   const [legalDocCategories, setLegalDocCategories] = useState([]);
   const [materialRequests, setMaterialRequests] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [whatsappRecipients, setWhatsappRecipients] = useState([]);
   const [company, setCompany] = useState({ name: "NOVA", address: "", gstin: "" });
   const [printContent, setPrintContent] = useState(null);
   const [printTitle, setPrintTitle] = useState("nova-document");
@@ -749,7 +751,7 @@ export default function NovaOps() {
 
   useEffect(() => {
     (async () => {
-      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc, mr, po] = await Promise.all([
+      const [inv, att, emp, fin, ord, pay, dd, co, pr, ld, as, pReg, pw, ldc, mr, po, wr] = await Promise.all([
         loadList(KEYS.inventory),
         loadList(KEYS.attendance),
         loadList(KEYS.employees),
@@ -766,6 +768,7 @@ export default function NovaOps() {
         loadList(KEYS.legalDocCategories),
         loadList(KEYS.materialRequests),
         loadList(KEYS.purchaseOrders),
+        loadList(KEYS.whatsappRecipients),
       ]);
       setInventory(inv);
       setAttendance(att);
@@ -783,6 +786,7 @@ export default function NovaOps() {
       setLegalDocCategories(ldc);
       setMaterialRequests(mr);
       setPurchaseOrders(po);
+      setWhatsappRecipients(wr);
       setLoading(false);
     })();
   }, []);
@@ -833,6 +837,9 @@ export default function NovaOps() {
   useEffect(() => {
     if (!loading) saveList(KEYS.purchaseOrders, purchaseOrders);
   }, [purchaseOrders, loading]);
+  useEffect(() => {
+    if (!loading) saveList(KEYS.whatsappRecipients, whatsappRecipients);
+  }, [whatsappRecipients, loading]);
   useEffect(() => {
     if (!loading) saveObj(KEYS.company, company);
   }, [company, loading]);
@@ -985,6 +992,8 @@ export default function NovaOps() {
             company={company}
             setPrintContent={setPrintContent}
             setPrintTitle={setPrintTitle}
+            whatsappRecipients={whatsappRecipients}
+            setWhatsappRecipients={setWhatsappRecipients}
           />
         )}
         {tab === "employees" && (
@@ -2039,7 +2048,7 @@ function formatLeaveCount(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function AttendanceTab({ records, setRecords, employees, company, setPrintContent, setPrintTitle }) {
+function AttendanceTab({ records, setRecords, employees, company, setPrintContent, setPrintTitle, whatsappRecipients, setWhatsappRecipients }) {
   const [date, setDate] = useState(todayISO());
   const [draft, setDraft] = useState({});
   const [draftSlot, setDraftSlot] = useState({});
@@ -2096,6 +2105,82 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
   const statusOptions = ["Present", "Half-day", "CL", "Half CL", "ML"];
   const toneOf = (s) =>
     s === "Present" ? "green" : s === "Half-day" ? "amber" : s === "CL" ? "blue" : s === "Half CL" ? "blue" : s === "ML" ? "gray" : "gray";
+
+  // ---- WhatsApp: plain-text daily summary, one-click via wa.me ----
+  const [newRecipientName, setNewRecipientName] = useState("");
+  const [newRecipientPhone, setNewRecipientPhone] = useState("");
+
+  const todaysRecords = records.filter((r) => r.date === date);
+  const byStatus = (s) => todaysRecords.filter((r) => r.status === s).map((r) => r.employeeName);
+  const clNames = [...byStatus("CL"), ...byStatus("Half CL")];
+  const mlNames = byStatus("ML");
+  const halfDayNames = byStatus("Half-day");
+  const permissionRecords = todaysRecords.filter((r) => r.hasPermission);
+  const presentCount = byStatus("Present").length;
+  const totalEmployees = employees.length;
+  const markedNames = new Set(todaysRecords.map((r) => r.employeeName));
+  const notMarkedNames = employees.filter((e) => !markedNames.has(e.name)).map((e) => e.name);
+  // "Absent" here means everyone not marked Present — CL/Half CL, ML, Half-day,
+  // and anyone not marked at all — matching how the Director/MD think of it.
+  const absentCount = totalEmployees - presentCount;
+
+  const buildWhatsAppMessage = () => {
+    const lines = [
+      `*${company.name} — Daily Attendance*`,
+      `Date: ${date}`,
+      "",
+      `Total No. of Employees: ${totalEmployees}`,
+      `Present: ${presentCount}`,
+      `Absent: ${absentCount}`,
+      "",
+      "*Absentees:*",
+    ];
+    if (clNames.length) lines.push(`CL: ${clNames.join(", ")}`);
+    if (mlNames.length) lines.push(`ML: ${mlNames.join(", ")}`);
+    if (halfDayNames.length) lines.push(`Half-day: ${halfDayNames.join(", ")}`);
+    if (notMarkedNames.length) lines.push(`Not marked: ${notMarkedNames.join(", ")}`);
+    if (!clNames.length && !mlNames.length && !halfDayNames.length && !notMarkedNames.length) {
+      lines.push("None — full attendance today.");
+    }
+    if (permissionRecords.length) {
+      lines.push("", "*Permission:*");
+      permissionRecords.forEach((r) => {
+        lines.push(`${r.employeeName}${r.permissionSlot ? ` (${r.permissionSlot})` : ""}`);
+      });
+    }
+    lines.push("", "— Sent from Nova Attendance");
+    return lines.join("\n");
+  };
+
+  const addRecipient = () => {
+    let phone = formatPhone10(newRecipientPhone);
+    // Guard: if someone pastes a number with the country code already on it
+    // (e.g. "919876543210", 12 digits), formatPhone10 alone would keep the
+    // wrong leading digits — strip a leading "91" first when that happens.
+    const rawDigits = newRecipientPhone.replace(/\D/g, "");
+    if (rawDigits.length === 12 && rawDigits.startsWith("91")) phone = rawDigits.slice(2);
+    if (!newRecipientName.trim()) return;
+    if (phone.length !== 10) {
+      alert("Enter a valid 10-digit WhatsApp number (without the country code).");
+      return;
+    }
+    if (whatsappRecipients.some((r) => r.phone === phone)) {
+      alert("That number is already saved as a recipient.");
+      return;
+    }
+    setWhatsappRecipients([...whatsappRecipients, { id: uid(), name: newRecipientName.trim(), phone }]);
+    setNewRecipientName("");
+    setNewRecipientPhone("");
+  };
+  const removeRecipient = (id, name) => {
+    if (!window.confirm(`Remove ${name} from WhatsApp recipients?`)) return;
+    setWhatsappRecipients(whatsappRecipients.filter((r) => r.id !== id));
+  };
+
+  // Real anchor link (not window.open in a click handler) — some browsers and
+  // sandboxed previews block script-triggered popups, but a genuine <a> the
+  // user clicks directly is treated as normal navigation and is never blocked.
+  const waLink = (phone) => `https://wa.me/91${phone}?text=${encodeURIComponent(buildWhatsAppMessage())}`;
 
   // HR usage: CL/ML tracked per calendar year, Permission tracked per calendar month.
   const usageYear = date.slice(0, 4);
@@ -2165,6 +2250,56 @@ function AttendanceTab({ records, setRecords, employees, company, setPrintConten
           <span><strong>{date}</strong> is a future date. Attendance can only be recorded for today or an earlier date — this entry will not be saved.</span>
         </div>
       )}
+
+      <div className="bg-white border border-neutral-200 rounded-xl p-4">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+          <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1.5">
+            <MessageCircle size={15} className="text-emerald-600" /> Send today's summary via WhatsApp
+          </div>
+          <span className="text-xs text-neutral-400">Total {totalEmployees} · Present {presentCount} · Absent {absentCount}</span>
+        </div>
+        {whatsappRecipients.length === 0 ? (
+          <p className="text-xs text-neutral-400 mb-2">No recipients added yet — add the Director/MD's WhatsApp number below.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {whatsappRecipients.map((r) => (
+              <div key={r.id} className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full pl-3 pr-1.5 py-1">
+                <a
+                  href={waLink(r.phone)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800"
+                >
+                  <MessageCircle size={13} /> {r.name}
+                </a>
+                <button onClick={() => removeRecipient(r.id, r.name)} className="text-emerald-400 hover:text-red-600 ml-1">
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            className={`${inputCls} w-36`}
+            placeholder="Name (e.g. Director)"
+            value={newRecipientName}
+            onChange={(e) => setNewRecipientName(e.target.value)}
+          />
+          <input
+            className={`${inputCls} w-40`}
+            placeholder="10-digit WhatsApp no."
+            value={newRecipientPhone}
+            onChange={(e) => setNewRecipientPhone(e.target.value.replace(/\D/g, ""))}
+          />
+          <button
+            onClick={addRecipient}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700"
+          >
+            <Plus size={13} /> Add recipient
+          </button>
+        </div>
+      </div>
 
       {isSunday(date) && (
         <div className="bg-neutral-100 border border-neutral-200 rounded-xl px-4 py-2 text-xs text-neutral-600">
